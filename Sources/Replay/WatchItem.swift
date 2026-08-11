@@ -37,6 +37,11 @@ struct WatchItem: Identifiable, Codable, Hashable {
 
     var availableChapters: [VideoChapter] { chapters ?? [] }
 
+    /// 详情侧栏是否有可展示内容：章节列表或本地字幕文件（歌词轴）。
+    var hasSidePaneContent: Bool {
+        !availableChapters.isEmpty || subtitleFileURL != nil
+    }
+
     var resumablePosition: Double {
         let position = max(0, playbackPosition ?? 0)
         guard position >= 3 else { return 0 }

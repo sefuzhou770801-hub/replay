@@ -46,7 +46,7 @@ struct ContentView: View {
                     if width < 1160,
                        columnVisibility != .detailOnly,
                        let selectedItem = store.selectedItem,
-                       !selectedItem.availableChapters.isEmpty {
+                       selectedItem.hasSidePaneContent {
                         withAnimation(.easeInOut(duration: 0.22)) {
                             columnVisibility = .detailOnly
                         }
@@ -774,12 +774,12 @@ private struct VideoDetail: View {
     }
 
     private var usesCompactToolbarActions: Bool {
-        !item.availableChapters.isEmpty
+        item.hasSidePaneContent
     }
 
     @ViewBuilder
     private var chapterLayout: some View {
-        if item.availableChapters.isEmpty {
+        if !item.hasSidePaneContent {
             centerPane
         } else if #available(macOS 14.0, *) {
             centerPane
@@ -833,13 +833,13 @@ private struct VideoDetail: View {
             }
             .fixedSize()
 
-            if !item.availableChapters.isEmpty, !chaptersPresented {
+            if item.hasSidePaneContent, !chaptersPresented {
                 TitlebarInteractiveHost {
                     Button(action: toggleChapters) {
                         Image(systemName: "sidebar.trailing")
                     }
                     .watchGlassButton()
-                    .help("显示章节")
+                    .help("显示侧栏")
                 }
                 .fixedSize()
             }
@@ -920,10 +920,13 @@ private struct VideoDetail: View {
     private var chapterSidebar: some View {
         ChapterSidebar(
             chapters: item.availableChapters,
+            subtitleCues: subtitleTrack?.cues ?? [],
+            hasSubtitleSource: item.subtitleFileURL != nil || subtitleTrack != nil,
             currentTime: playback.currentTime,
             isPresented: chaptersPresented,
             toggle: toggleChapters,
-            select: seekToChapter
+            selectChapter: seekToChapter,
+            selectCueTime: seekToTime
         )
         .ignoresSafeArea(.container, edges: .top)
     }
@@ -957,13 +960,16 @@ private struct VideoDetail: View {
             }
 
             if subtitlesEnabled, let caption = subtitleTrack?.text(at: playback.currentTime) {
+                // 双语恒为两行：原文一行 + 中文一行；长句靠缩小字号，不换行成三四行。
                 Text(caption)
-                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(5)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 11)
+                    .lineSpacing(3)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.5)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                     .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.5), radius: 10, y: 3)
                     .frame(maxWidth: 900)
@@ -1118,11 +1124,20 @@ private struct VideoDetail: View {
     private func seekToChapter(_ chapter: VideoChapter) {
         seekRequest = PlayerSeekRequest(time: chapter.startTime, shouldPlay: playback.isPlaying)
         store.updatePlaybackPosition(chapter.startTime, for: item.id)
+        // 暂停时播放器未必立刻回推进度；乐观写入快照，侧栏/字幕立刻对齐目标时刻。
+        applyPlaybackTimeOptimistically(chapter.startTime)
     }
 
     private func seekToTime(_ time: Double) {
         seekRequest = PlayerSeekRequest(time: time, shouldPlay: playback.isPlaying)
         store.updatePlaybackPosition(time, for: item.id)
+        applyPlaybackTimeOptimistically(time)
+    }
+
+    private func applyPlaybackTimeOptimistically(_ time: Double) {
+        guard time.isFinite else { return }
+        guard abs(playback.currentTime - time) > 0.001 else { return }
+        playback.currentTime = time
     }
 
     private func toggleChapters() {
@@ -1136,7 +1151,7 @@ private struct VideoDetail: View {
     }
 
     private var prefersOneSidePane: Bool {
-        windowWidth < 1160 && !item.availableChapters.isEmpty
+        windowWidth < 1160 && item.hasSidePaneContent
     }
 
     private func collapseSidebarForNarrowChapterLayoutIfNeeded() {
@@ -1752,54 +1767,184 @@ private struct PlayerControlButton: View {
     }
 }
 
+private enum SidePaneMode: String {
+    case chapters
+    case lyrics
+}
+
 private struct ChapterSidebar: View {
     let chapters: [VideoChapter]
+    let subtitleCues: [VideoSubtitleCue]
+    let hasSubtitleSource: Bool
     let currentTime: Double
     let isPresented: Bool
     let toggle: () -> Void
-    let select: (VideoChapter) -> Void
+    let selectChapter: (VideoChapter) -> Void
+    let selectCueTime: (Double) -> Void
+
+    /// 持久化视图选择：章节列表 / 歌词轴。
+    @AppStorage("sidePaneMode") private var sidePaneModeRaw = SidePaneMode.chapters.rawValue
+    @State private var activeCueIndex: Int?
+    @State private var autoFollowSuspendedUntil = Date.distantPast
+    @State private var ignoreLiveScrollUntil = Date.distantPast
+    /// 递增以触发 ScrollViewReader 滚到当前句（含暂停结束后的定时恢复）。
+    @State private var followScrollToken = 0
+    @State private var resumeFollowTask: Task<Void, Never>?
+    /// 用于识别 seek 造成的非连续时间跳变（相对上一帧 currentTime）。
+    @State private var lastTrackedTime = Double.nan
+
+    private let autoFollowResumeDelay: TimeInterval = 4
+    /// 超过该间隔的时间跳变视为 seek，立刻恢复高亮跟随。
+    private let seekJumpThreshold: TimeInterval = 1.25
+
+    private var preferredMode: SidePaneMode {
+        SidePaneMode(rawValue: sidePaneModeRaw) ?? .chapters
+    }
+
+    /// 在缺少对应数据时回落到另一可用视图（仅字幕时默认歌词轴）。
+    private var effectiveMode: SidePaneMode {
+        let hasChapters = !chapters.isEmpty
+        let hasLyrics = hasSubtitleSource || !subtitleCues.isEmpty
+        switch preferredMode {
+        case .chapters:
+            if hasChapters { return .chapters }
+            return hasLyrics ? .lyrics : .chapters
+        case .lyrics:
+            if hasLyrics { return .lyrics }
+            return hasChapters ? .chapters : .lyrics
+        }
+    }
+
+    private var listCount: Int {
+        effectiveMode == .chapters ? chapters.count : subtitleCues.count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Label("章节", systemImage: "list.bullet.rectangle")
-                    .font(.headline.weight(.semibold))
-                Text("\(chapters.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.1), in: Capsule())
-                Spacer(minLength: 8)
-                if isPresented {
-                    TitlebarInteractiveHost {
-                        Button(action: toggle) {
-                            Image(systemName: "sidebar.trailing")
-                        }
-                        .watchGlassButton()
-                        .help("隐藏章节")
-                    }
-                    .fixedSize()
+            header
+            Divider()
+            Group {
+                switch effectiveMode {
+                case .chapters:
+                    chaptersList
+                case .lyrics:
+                    lyricsList
                 }
             }
-            .padding(.horizontal, 14)
-            .frame(height: 56)
+        }
+        .background(.ultraThinMaterial)
+        .onAppear {
+            lastTrackedTime = currentTime
+            refreshActiveCue(at: currentTime)
+        }
+        .onDisappear {
+            resumeFollowTask?.cancel()
+            resumeFollowTask = nil
+        }
+        .onChange(of: currentTime) { newTime in
+            // 含暂停态 seek 的乐观时间更新：按目标时刻立刻重算高亮。
+            refreshActiveCue(at: newTime)
+        }
+        .onChange(of: subtitleCues.count) { _ in
+            activeCueIndex = nil
+            lastTrackedTime = Double.nan
+            refreshActiveCue(at: currentTime)
+        }
+    }
 
-            Divider()
+    private var header: some View {
+        HStack(spacing: 8) {
+            modeToggle
 
+            Text("\(listCount)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color.secondary.opacity(0.1), in: Capsule())
+
+            Spacer(minLength: 8)
+
+            if isPresented {
+                TitlebarInteractiveHost {
+                    Button(action: toggle) {
+                        Image(systemName: "sidebar.trailing")
+                    }
+                    .watchGlassButton()
+                    .help("隐藏侧栏")
+                }
+                .fixedSize()
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 56)
+    }
+
+    private var modeToggle: some View {
+        HStack(spacing: 2) {
+            modeButton(
+                title: "章节",
+                mode: .chapters,
+                enabled: !chapters.isEmpty,
+                disabledHelp: "暂无章节"
+            )
+            modeButton(
+                title: "歌词",
+                mode: .lyrics,
+                enabled: hasSubtitleSource || !subtitleCues.isEmpty,
+                disabledHelp: "无字幕"
+            )
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.06), in: Capsule())
+    }
+
+    private func modeButton(title: String, mode: SidePaneMode, enabled: Bool, disabledHelp: String) -> some View {
+        let isSelected = effectiveMode == mode
+        return Button {
+            guard enabled else { return }
+            sidePaneModeRaw = mode.rawValue
+        } label: {
+            Text(title)
+                .font(.caption.weight(isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .frame(minWidth: 40)
+                .background {
+                    if isSelected {
+                        Capsule().fill(Color.primary.opacity(0.12))
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
+        .help(enabled ? title : disabledHelp)
+    }
+
+    @ViewBuilder
+    private var chaptersList: some View {
+        if chapters.isEmpty {
+            sidePaneEmptyState(
+                title: "暂无章节",
+                detail: "当前视频没有章节标记。"
+            )
+        } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 3) {
                     ForEach(chapters) { chapter in
                         Button {
-                            select(chapter)
+                            selectChapter(chapter)
                         } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 Text(formatTime(chapter.startTime))
                                     .font(.caption.monospacedDigit())
-                                    .foregroundStyle(isCurrent(chapter) ? Color.accentColor : Color.secondary)
+                                    .foregroundStyle(isCurrentChapter(chapter) ? Color.accentColor : Color.secondary)
                                     .frame(width: 48, alignment: .trailing)
                                 Text(chapter.title)
-                                    .font(.callout.weight(isCurrent(chapter) ? .semibold : .regular))
+                                    .font(.callout.weight(isCurrentChapter(chapter) ? .semibold : .regular))
                                     .foregroundStyle(.primary)
                                     .multilineTextAlignment(.leading)
                                     .lineLimit(2)
@@ -1809,7 +1954,7 @@ private struct ChapterSidebar: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 10)
                             .background {
-                                if isCurrent(chapter) {
+                                if isCurrentChapter(chapter) {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                                         .fill(Color.accentColor.opacity(0.13))
                                 }
@@ -1824,14 +1969,239 @@ private struct ChapterSidebar: View {
             }
             .scrollIndicators(.hidden)
         }
-        .background(.ultraThinMaterial)
     }
 
-    private func isCurrent(_ chapter: VideoChapter) -> Bool {
+    @ViewBuilder
+    private var lyricsList: some View {
+        if subtitleCues.isEmpty {
+            sidePaneEmptyState(
+                title: "暂无字幕",
+                detail: hasSubtitleSource ? "字幕仍在加载，或文件无法解析。" : "当前视频没有可用字幕。"
+            )
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        ForEach(subtitleCues.indices, id: \.self) { index in
+                            let cue = subtitleCues[index]
+                            let isCurrent = activeCueIndex == index
+                            Button {
+                                // 暂停时播放时间流可能不推进；按目标 cue 立即刷新高亮与滚动。
+                                jumpToCue(index: index)
+                            } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    Text(formatTime(cue.startTime))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary)
+                                        .frame(width: 48, alignment: .trailing)
+                                    cueTextStack(cue.text, isCurrent: isCurrent)
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background {
+                                    if isCurrent {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(Color.accentColor.opacity(0.13))
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .id(index)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                    .background {
+                        SidePaneScrollActivityMonitor {
+                            noteUserScroll()
+                        }
+                        .frame(width: 0, height: 0)
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .onAppear {
+                    refreshActiveCue(at: currentTime)
+                    if let activeCueIndex {
+                        DispatchQueue.main.async {
+                            scrollToCue(activeCueIndex, proxy: proxy)
+                        }
+                    }
+                }
+                .onChange(of: activeCueIndex) { newIndex in
+                    guard effectiveMode == .lyrics,
+                          Date() >= autoFollowSuspendedUntil,
+                          newIndex != nil else { return }
+                    followScrollToken &+= 1
+                }
+                .onChange(of: followScrollToken) { _ in
+                    guard effectiveMode == .lyrics,
+                          let activeCueIndex else { return }
+                    // forceFollow 路径已清掉暂停窗；此处仍尊重用户手动滚动的暂停。
+                    guard Date() >= autoFollowSuspendedUntil else { return }
+                    scrollToCue(activeCueIndex, proxy: proxy)
+                }
+                .onChange(of: sidePaneModeRaw) { _ in
+                    guard effectiveMode == .lyrics,
+                          let activeCueIndex else { return }
+                    // 切到歌词轴时立刻对齐当前句。
+                    DispatchQueue.main.async {
+                        scrollToCue(activeCueIndex, proxy: proxy)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 点歌词条目：先按目标索引刷新高亮/滚动，再交给播放器 seek。
+    private func jumpToCue(index: Int) {
+        guard subtitleCues.indices.contains(index) else { return }
+        let cue = subtitleCues[index]
+        activeCueIndex = index
+        // 用户主动点句：立即跟随，不要被「手动滚动暂停」挡住。
+        autoFollowSuspendedUntil = .distantPast
+        resumeFollowTask?.cancel()
+        resumeFollowTask = nil
+        followScrollToken &+= 1
+        selectCueTime(cue.startTime)
+    }
+
+    private func cueTextStack(_ text: String, isCurrent: Bool) -> some View {
+        let lines = text
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return VStack(alignment: .leading, spacing: 2) {
+            if lines.count >= 2 {
+                Text(lines[0])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(lines.dropFirst().joined(separator: "\n"))
+                    .font(.callout.weight(isCurrent ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(lines.first ?? text)
+                    .font(.callout.weight(isCurrent ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func sidePaneEmptyState(title: String, detail: String) -> some View {
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+            Text(title)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func isCurrentChapter(_ chapter: VideoChapter) -> Bool {
         guard currentTime >= chapter.startTime else { return false }
         if let endTime = chapter.endTime { return currentTime < endTime }
         guard let index = chapters.firstIndex(of: chapter), index + 1 < chapters.count else { return true }
         return currentTime < chapters[index + 1].startTime
+    }
+
+    private func refreshActiveCue(at time: Double) {
+        let previousTime = lastTrackedTime
+        lastTrackedTime = time
+        let isSeekJump = previousTime.isFinite && abs(time - previousTime) > seekJumpThreshold
+
+        let resolved = Self.cueIndex(at: time, in: subtitleCues, hint: activeCueIndex)
+        if resolved != activeCueIndex {
+            activeCueIndex = resolved
+        }
+
+        // 非连续跳转（进度条/歌词点句/章节 seek）：立即恢复跟随并滚到目标句。
+        // 连续播放的小步推进仍尊重「手动滚动后暂停 4 秒」。
+        if isSeekJump, effectiveMode == .lyrics {
+            autoFollowSuspendedUntil = .distantPast
+            resumeFollowTask?.cancel()
+            resumeFollowTask = nil
+            if resolved != nil {
+                followScrollToken &+= 1
+            }
+        }
+    }
+
+    private func scrollToCue(_ index: Int, proxy: ScrollViewProxy) {
+        ignoreLiveScrollUntil = Date().addingTimeInterval(0.45)
+        withAnimation(.easeInOut(duration: 0.22)) {
+            proxy.scrollTo(index, anchor: .center)
+        }
+    }
+
+    private func noteUserScroll() {
+        guard Date() >= ignoreLiveScrollUntil else { return }
+        autoFollowSuspendedUntil = Date().addingTimeInterval(autoFollowResumeDelay)
+        resumeFollowTask?.cancel()
+        let delay = autoFollowResumeDelay
+        resumeFollowTask = Task {
+            let nanos = UInt64(delay * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard Date() >= autoFollowSuspendedUntil, activeCueIndex != nil else { return }
+                followScrollToken &+= 1
+            }
+        }
+    }
+
+    /// 当前句判定：优先用 hint 邻域 O(1)，否则二分 O(log n)。
+    private static func cueIndex(at time: Double, in cues: [VideoSubtitleCue], hint: Int?) -> Int? {
+        guard !cues.isEmpty, time.isFinite else { return nil }
+
+        if let hint, cues.indices.contains(hint) {
+            if cues[hint].startTime <= time, time < cues[hint].endTime {
+                return hint
+            }
+            if hint + 1 < cues.count,
+               cues[hint + 1].startTime <= time,
+               time < cues[hint + 1].endTime {
+                return hint + 1
+            }
+            if hint > 0,
+               cues[hint - 1].startTime <= time,
+               time < cues[hint - 1].endTime {
+                return hint - 1
+            }
+        }
+
+        var low = 0
+        var high = cues.count - 1
+        var candidate: Int?
+        while low <= high {
+            let mid = (low + high) / 2
+            if cues[mid].startTime <= time {
+                candidate = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        guard let candidate else { return nil }
+        let cue = cues[candidate]
+        return time < cue.endTime ? candidate : nil
     }
 
     private func formatTime(_ seconds: Double) -> String {
@@ -1842,6 +2212,66 @@ private struct ChapterSidebar: View {
         return hours > 0
             ? String(format: "%d:%02d:%02d", hours, minutes, remaining)
             : String(format: "%d:%02d", minutes, remaining)
+    }
+}
+
+/// 监听侧栏列表的用户滚动，用于暂停自动跟随。
+private struct SidePaneScrollActivityMonitor: NSViewRepresentable {
+    let onUserScroll: () -> Void
+
+    final class Coordinator {
+        var onUserScroll: () -> Void
+        private var token: NSObjectProtocol?
+        private weak var scrollView: NSScrollView?
+
+        init(onUserScroll: @escaping () -> Void) {
+            self.onUserScroll = onUserScroll
+        }
+
+        func attach(to scrollView: NSScrollView) {
+            if self.scrollView === scrollView, token != nil { return }
+            detach()
+            self.scrollView = scrollView
+            token = NotificationCenter.default.addObserver(
+                forName: NSScrollView.didLiveScrollNotification,
+                object: scrollView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.onUserScroll()
+            }
+        }
+
+        func detach() {
+            if let token {
+                NotificationCenter.default.removeObserver(token)
+                self.token = nil
+            }
+            scrollView = nil
+        }
+
+        deinit {
+            detach()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onUserScroll: onUserScroll)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onUserScroll = onUserScroll
+        DispatchQueue.main.async {
+            guard let scrollView = nsView.enclosingScrollView else { return }
+            context.coordinator.attach(to: scrollView)
+        }
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.detach()
     }
 }
 
