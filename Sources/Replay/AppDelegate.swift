@@ -138,22 +138,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 与基线 WindowGroup 一致：关最后一窗后进程保留，等 reopen / 再次 open 重建。
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         inbox.receive(urls)
-        application.activate(ignoringOtherApps: true)
+        Self.activateFocusOrReopenMainWindow(application)
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         inbox.receive(filenames.map { URL(fileURLWithPath: $0) })
         sender.reply(toOpenOrPrint: .success)
-        sender.activate(ignoringOtherApps: true)
+        Self.activateFocusOrReopenMainWindow(sender)
     }
 
+    /// 有可见主窗口时只置前；无窗口时用捕获的 openWindow 重建，避免叠第二个。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            sender.windows.first?.makeKeyAndOrderFront(nil)
-        }
         sender.activate(ignoringOtherApps: true)
+        if flag || Self.focusExistingMainWindow(in: sender) {
+            return false
+        }
+        if Self.reopenMainWindowIfNeeded() {
+            return false
+        }
+        // openWindow 尚未挂上时退回系统：允许 WindowGroup 建恰好一个。
+        return true
+    }
+
+    private static func activateFocusOrReopenMainWindow(_ application: NSApplication) {
+        application.activate(ignoringOtherApps: true)
+        if focusExistingMainWindow(in: application) {
+            return
+        }
+        _ = reopenMainWindowIfNeeded()
+    }
+
+    /// 只认主窗口：排除 LocalVideoPlayer 后台浮窗等 NSPanel。
+    @discardableResult
+    private static func focusExistingMainWindow(in application: NSApplication) -> Bool {
+        let candidates = application.windows.filter { window in
+            guard window.canBecomeKey || window.canBecomeMain else { return false }
+            // 浮窗播放器是 NSPanel，不应当成主窗口置前目标。
+            if window is NSPanel { return false }
+            return true
+        }
+        guard let window = candidates.first(where: \.isVisible) ?? candidates.first else {
+            return false
+        }
+        window.makeKeyAndOrderFront(nil)
+        return true
+    }
+
+    @discardableResult
+    private static func reopenMainWindowIfNeeded() -> Bool {
+        guard let open = MainWindowOpener.open else { return false }
+        open()
         return true
     }
 }
