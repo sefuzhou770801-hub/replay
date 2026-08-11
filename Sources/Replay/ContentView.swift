@@ -82,24 +82,24 @@ struct ContentView: View {
             values.forEach { store.accept(rawValue: $0) }
             inbox.clearClipboard()
         }
-        .alert("Couldn’t Add Links", isPresented: Binding(
+        .alert("添加链接失败", isPresented: Binding(
             get: { store.lastIntakeError != nil },
             set: { if !$0 { store.lastIntakeError = nil } }
         )) {
-            Button("OK", role: .cancel) { store.lastIntakeError = nil }
+            Button("好", role: .cancel) { store.lastIntakeError = nil }
         } message: {
-            Text(store.lastIntakeError ?? "Unknown error")
+            Text(store.lastIntakeError ?? "未知错误")
         }
         .confirmationDialog(
-            "Remove this video?",
+            "删除这个视频？",
             isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }),
             titleVisibility: .visible
         ) {
-            Button("Remove video and local file", role: .destructive) {
+            Button("删除视频和本地文件", role: .destructive) {
                 if let itemToDelete { store.remove(itemToDelete.id) }
                 itemToDelete = nil
             }
-            Button("Cancel", role: .cancel) { itemToDelete = nil }
+            Button("取消", role: .cancel) { itemToDelete = nil }
         }
     }
 
@@ -186,7 +186,7 @@ struct ContentView: View {
                                 }
                             } header: {
                                 SidebarSectionHeader(
-                                    title: "Archive",
+                                    title: "已看",
                                     count: archivedItems.count,
                                     systemImage: "checkmark.circle"
                                 )
@@ -236,15 +236,15 @@ struct ContentView: View {
         .id(item.id)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu {
-            Button(item.isWatched ? "Move to Queue" : "Mark Watched") {
+            Button(item.isWatched ? "移回队列" : "标记已看") {
                 store.toggleWatched(item.id)
             }
             if item.state == .failed {
-                Button("Retry Download") { store.startDownload(for: item.id) }
+                Button("重试下载") { store.startDownload(for: item.id) }
             }
-            Button("Open Original") { store.openOriginal(item.id) }
+            Button("打开原网页") { store.openOriginal(item.id) }
             Divider()
-            Button("Remove", role: .destructive) { itemToDelete = item }
+            Button("删除", role: .destructive) { itemToDelete = item }
         }
     }
 
@@ -458,7 +458,7 @@ private struct QueueRow: View, Equatable {
     @ViewBuilder
     private var title: some View {
         if isEditingTitle {
-            TextField("Video title", text: $draftTitle)
+            TextField("视频标题", text: $draftTitle)
                 .textFieldStyle(.plain)
                 .font(.callout.weight(.semibold))
                 .focused($isTitleFocused)
@@ -484,7 +484,7 @@ private struct QueueRow: View, Equatable {
                 .multilineTextAlignment(.leading)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2, perform: beginEditing)
-                .help("Double-click to rename")
+                .help("双击可重命名")
         }
     }
 
@@ -528,8 +528,8 @@ private struct QueueRow: View, Equatable {
             return item.progressLabel
         case .ready:
             return item.resumablePosition > 0
-                ? "Resume \(formatTime(item.resumablePosition))"
-                : "Saved offline"
+                ? "续播 \(formatTime(item.resumablePosition))"
+                : "已存到本地"
         case .failed:
             return item.progressLabel
         }
@@ -629,9 +629,9 @@ private struct SidebarEmptyState: View {
                 .font(.system(size: 28, weight: .light))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
-            Text("Your library is quiet")
+            Text("片库还空着")
                 .font(.subheadline.weight(.semibold))
-            Text("Paste a link to save your next video.")
+            Text("粘贴一个链接，存下你要看的视频。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -836,7 +836,7 @@ private struct VideoDetail: View {
                         Image(systemName: "sidebar.trailing")
                     }
                     .watchGlassButton()
-                    .help("Show chapters")
+                    .help("显示章节")
                 }
                 .fixedSize()
             }
@@ -855,11 +855,11 @@ private struct VideoDetail: View {
                     if usesCompactToolbarActions {
                         Image(systemName: "safari")
                     } else {
-                        Label("Open Original", systemImage: "safari")
+                        Label("打开原网页", systemImage: "safari")
                     }
                 }
                 .watchGlassButton()
-                .help("Open the original video")
+                .help("打开原视频网页")
 
                 Button {
                     store.toggleWatched(item.id)
@@ -868,13 +868,13 @@ private struct VideoDetail: View {
                         Image(systemName: item.isWatched ? "arrow.uturn.backward" : "checkmark")
                     } else {
                         Label(
-                            item.isWatched ? "Move to Queue" : "Mark Watched",
+                            item.isWatched ? "移回队列" : "标记已看",
                             systemImage: item.isWatched ? "arrow.uturn.backward" : "checkmark"
                         )
                     }
                 }
                 .watchGlassButton()
-                .help(item.isWatched ? "Move this video back to the queue" : "Mark this video as watched")
+                .help(item.isWatched ? "把这个视频移回队列" : "把这个视频标记为已看")
             }
         }
     }
@@ -1070,7 +1070,7 @@ private struct VideoDetail: View {
                     .font(.system(size: 38, weight: .light))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.white)
-                Text(item.state == .failed ? "Download failed" : "Saving for offline")
+                Text(item.state == .failed ? "下载失败" : "正在存到本地")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
                 if item.state == .downloading {
@@ -1081,13 +1081,13 @@ private struct VideoDetail: View {
                         .font(.callout)
                         .foregroundStyle(.white.opacity(0.68))
                 } else if item.state == .failed {
-                    Text(item.errorMessage ?? "Unknown download error")
+                    Text(item.errorMessage ?? "未知的下载错误")
                         .font(.callout)
                         .foregroundStyle(.white.opacity(0.68))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 520)
                         .textSelection(.enabled)
-                    Button("Retry Download") { store.startDownload(for: item.id) }
+                    Button("重试下载") { store.startDownload(for: item.id) }
                         .watchGlassButton(prominent: true)
                 } else {
                     ProgressView()
@@ -1194,8 +1194,8 @@ private struct PlayerVolumeHUD: View {
         }
         .shadow(color: .black.opacity(0.35), radius: 14, y: 5)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Volume")
-        .accessibilityValue(isMuted ? "Muted" : "\(Int((volume * 100).rounded())) percent")
+        .accessibilityLabel("音量")
+        .accessibilityValue(isMuted ? "已静音" : "百分之 \(Int((volume * 100).rounded()))")
     }
 
     private var symbolName: String {
@@ -1270,14 +1270,14 @@ private struct PlaybackControls: View {
             HStack(spacing: 3) {
                 PlayerControlButton(
                     systemImage: snapshot.isPlaying ? "pause.fill" : "play.fill",
-                    help: snapshot.isPlaying ? "Pause (Space)" : "Play (Space)",
+                    help: snapshot.isPlaying ? "暂停（空格键）" : "播放（空格键）",
                     isPrimary: true,
                     action: togglePlayback
                 )
-                PlayerControlButton(systemImage: "gobackward.10", help: "Back 10 seconds (Left Arrow)") {
+                PlayerControlButton(systemImage: "gobackward.10", help: "后退 10 秒（左方向键）") {
                     skip(-10)
                 }
-                PlayerControlButton(systemImage: "goforward.10", help: "Forward 10 seconds (Right Arrow)") {
+                PlayerControlButton(systemImage: "goforward.10", help: "前进 10 秒（右方向键）") {
                     skip(10)
                 }
             }
@@ -1295,8 +1295,8 @@ private struct PlaybackControls: View {
             PlayerControlButton(
                 systemImage: subtitlesEnabled && hasSubtitles ? "captions.bubble.fill" : "captions.bubble",
                 help: hasSubtitles
-                    ? (subtitlesEnabled ? "Turn subtitles off" : "Turn subtitles on")
-                    : "No English subtitles available",
+                    ? (subtitlesEnabled ? "关闭字幕" : "打开字幕")
+                    : "没有可用的英文字幕",
                 isEnabled: hasSubtitles,
                 isSelected: subtitlesEnabled && hasSubtitles,
                 action: toggleSubtitles
@@ -1310,11 +1310,11 @@ private struct PlaybackControls: View {
                             ? Color.accentColor.opacity(0.16)
                             : Color.primary.opacity(0.04))
                 }
-                .help(snapshot.isExternalPlaybackActive ? "AirPlay is connected" : "Choose an AirPlay device")
+                .help(snapshot.isExternalPlaybackActive ? "AirPlay 已连接" : "选择 AirPlay 设备")
 
             PlayerControlButton(
                 systemImage: snapshot.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                help: snapshot.isMuted ? "Unmute" : "Mute",
+                help: snapshot.isMuted ? "取消静音" : "静音",
                 action: toggleMute
             )
         }
@@ -1412,8 +1412,8 @@ private struct PlaybackSpeedMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("Choose playback speed (Up/Down Arrow adjusts by 0.1×)")
-        .accessibilityLabel("Playback speed")
+        .help("选择播放速度（上下方向键每次调 0.1×）")
+        .accessibilityLabel("播放速度")
         .accessibilityValue(rateLabel(normalizedRate))
     }
 
@@ -1515,8 +1515,8 @@ private struct ChapterScrubber: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Playback position")
-        .accessibilityValue("\(formatTime(value)) of \(formatTime(duration))")
+        .accessibilityLabel("播放进度")
+        .accessibilityValue("\(formatTime(value))，共 \(formatTime(duration))")
     }
 
     private func timelineTrack(width: CGFloat, segments: [ChapterTimelineSegment]) -> some View {
@@ -1549,8 +1549,8 @@ private struct ChapterScrubber: View {
         width: CGFloat,
         segments: [ChapterTimelineSegment]
     ) -> some View {
-        let title = segment(at: time, in: segments)?.title ?? "Video"
-        let estimatedTitleWidth = CGFloat(title.count) * 6.6 + 28
+        let title = segment(at: time, in: segments)?.title ?? "视频"
+        let estimatedTitleWidth = title.reduce(CGFloat(28)) { $0 + ($1.isASCII ? 6.6 : 12) }
         let popoverWidth = min(max(1, width), min(420, max(150, estimatedTitleWidth)))
         let halfWidth = popoverWidth / 2
         let anchor = xPosition(for: time, width: width)
@@ -1612,7 +1612,7 @@ private struct ChapterScrubber: View {
             return [ChapterTimelineSegment(
                 startTime: 0,
                 endTime: duration,
-                title: "Video",
+                title: "视频",
                 isChapter: false
             )]
         }
@@ -1622,7 +1622,7 @@ private struct ChapterScrubber: View {
             result.append(ChapterTimelineSegment(
                 startTime: 0,
                 endTime: first.startTime,
-                title: "Video",
+                title: "视频",
                 isChapter: false
             ))
         }
@@ -1750,7 +1750,7 @@ private struct ChapterSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Label("Chapters", systemImage: "list.bullet.rectangle")
+                Label("章节", systemImage: "list.bullet.rectangle")
                     .font(.headline.weight(.semibold))
                 Text("\(chapters.count)")
                     .font(.caption.monospacedDigit())
@@ -1765,7 +1765,7 @@ private struct ChapterSidebar: View {
                             Image(systemName: "sidebar.trailing")
                         }
                         .watchGlassButton()
-                        .help("Hide chapters")
+                        .help("隐藏章节")
                     }
                     .fixedSize()
                 }
@@ -1845,7 +1845,7 @@ private struct DropAndAddBar: View {
             Image(systemName: "link")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isDropTarget ? Color.accentColor : Color.secondary)
-            TextField("Paste a URL or text", text: $urlText)
+            TextField("粘贴链接或文字", text: $urlText)
                 .textFieldStyle(.plain)
                 .frame(minWidth: 0, maxWidth: .infinity)
                 .focused(isURLFieldFocused)
@@ -1907,9 +1907,9 @@ private struct EmptyLibraryView: View {
                         tint: isDropTarget ? Color.accentColor : Color.accentColor.opacity(0.08),
                         in: Circle()
                     )
-                Text(isDropTarget ? "Drop to save for later" : "Ready when you are")
+                Text(isDropTarget ? "松手存入队列" : "随时可以开始")
                     .font(.title2.weight(.semibold))
-                Text("Copy a video link and press ⌘V. Replay downloads a clean offline copy and remembers your place.")
+                Text("复制视频链接后按 ⌘V。Replay 会下载一份干净的离线副本，并记住你看到哪儿。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

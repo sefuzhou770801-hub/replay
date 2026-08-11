@@ -45,7 +45,7 @@ struct WatchItem: Identifiable, Codable, Hashable {
     }
 
     var sourceName: String {
-        guard let host = URL(string: urlString)?.host?.lowercased() else { return "VIDEO" }
+        guard let host = URL(string: urlString)?.host?.lowercased() else { return "视频" }
         if host.contains("youtu") { return "YOUTUBE" }
         if host == "x.com" || host.hasSuffix(".x.com") || host.contains("twitter") { return "X" }
         return host.uppercased()

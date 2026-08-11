@@ -112,7 +112,7 @@ final class QueueStore: ObservableObject {
 
         for index in items.indices where items[index].state == .downloading {
             items[index].state = .queued
-            items[index].progressLabel = "Waiting to resume"
+            items[index].progressLabel = "等待恢复"
         }
         save()
         selection = queueItems.first?.id ?? archivedItems.first?.id
@@ -159,7 +159,7 @@ final class QueueStore: ObservableObject {
 
     func accept(_ incoming: URL) {
         guard let webURL = URLIntake.resolve(incoming) else {
-            lastIntakeError = "That drop did not contain a web URL."
+            lastIntakeError = "拖入的内容里没有网页链接。"
             return
         }
         add(webURL)
@@ -168,7 +168,7 @@ final class QueueStore: ObservableObject {
     func accept(rawValue: String) {
         let urls = URLIntake.webURLs(from: rawValue)
         guard !urls.isEmpty else {
-            lastIntakeError = "No HTTP or HTTPS links were found in that text."
+            lastIntakeError = "这段文字里没有找到 HTTP 或 HTTPS 链接。"
             return
         }
         guard urls.count > 1 else {
@@ -187,28 +187,28 @@ final class QueueStore: ObservableObject {
         lastIntakeError = nil
 
         if addedCount > 0 {
-            let duplicateDetail = existingCount > 0 ? " · \(existingCount) already in your library" : ""
+            let duplicateDetail = existingCount > 0 ? " · \(existingCount) 个已在片库中" : ""
             let detail: String
             let systemImage: String
             if powerMonitor.isLowPowerModeEnabled {
-                detail = "Queued until Low Power Mode is off\(duplicateDetail)"
+                detail = "已排队，等低电量模式关闭后开始\(duplicateDetail)"
                 systemImage = "battery.25"
             } else if networkMonitor.isOnline {
-                detail = "Queued for download\(duplicateDetail)"
+                detail = "已加入下载队列\(duplicateDetail)"
                 systemImage = "arrow.down.circle.fill"
             } else {
-                detail = "Waiting for an internet connection\(duplicateDetail)"
+                detail = "等待网络连接\(duplicateDetail)"
                 systemImage = "wifi.slash"
             }
             showIntakeNotice(
-                title: "Added \(addedCount) videos",
+                title: "已加入 \(addedCount) 个视频",
                 detail: detail,
                 systemImage: systemImage
             )
         } else {
             showIntakeNotice(
-                title: "Already in your queue",
-                detail: "All \(existingCount) pasted links are already in your library",
+                title: "已在队列中",
+                detail: "粘贴的 \(existingCount) 个链接都已在片库中",
                 systemImage: "checkmark.circle.fill"
             )
         }
@@ -227,10 +227,10 @@ final class QueueStore: ObservableObject {
             if existing.state == .failed || existing.state == .queued { startDownload(for: existing.id) }
             if showsNotice {
                 let detail = existing.state == .failed || existing.state == .queued
-                    ? "Retrying \(existing.title)"
-                    : "\(existing.title) is already saved"
+                    ? "正在重试 \(existing.title)"
+                    : "\(existing.title) 已经保存过了"
                 showIntakeNotice(
-                    title: "Already in your queue",
+                    title: "已在队列中",
                     detail: detail,
                     systemImage: "checkmark.circle.fill"
                 )
@@ -239,7 +239,7 @@ final class QueueStore: ObservableObject {
             return .existing
         }
 
-        let host = url.host?.replacingOccurrences(of: "www.", with: "") ?? "Video"
+        let host = url.host?.replacingOccurrences(of: "www.", with: "") ?? "视频"
         let item = WatchItem(
             id: UUID(),
             urlString: canonical,
@@ -250,7 +250,7 @@ final class QueueStore: ObservableObject {
             watchedAt: nil,
             state: .queued,
             progress: 0,
-            progressLabel: "Queued",
+            progressLabel: "排队中",
             localFilePath: nil,
             errorMessage: nil,
             playbackPosition: nil,
@@ -264,14 +264,14 @@ final class QueueStore: ObservableObject {
         save()
         startDownload(for: item.id)
         let current = self.item(with: item.id)
-        let isPowerPaused = current?.progressLabel == "Paused for Low Power Mode"
+        let isPowerPaused = current?.progressLabel == "低电量模式已暂停"
         let isOnline = networkMonitor.isOnline
         if showsNotice {
             showIntakeNotice(
-                title: "Added to your queue",
+                title: "已加入队列",
                 detail: isPowerPaused
-                    ? "Paused while Low Power Mode is on"
-                    : (isOnline ? "Downloading \(item.title)" : "Waiting for an internet connection"),
+                    ? "低电量模式开启中，已暂停"
+                    : (isOnline ? "正在下载 \(item.title)" : "等待网络连接"),
                 systemImage: isPowerPaused ? "battery.25" : (isOnline ? "arrow.down.circle.fill" : "wifi.slash")
             )
         }
@@ -300,7 +300,7 @@ final class QueueStore: ObservableObject {
             waitForConnection(id, message: item.errorMessage)
             return
         }
-        let isRetry = item.progress > 0 || item.errorMessage != nil || item.progressLabel != "Queued"
+        let isRetry = item.progress > 0 || item.errorMessage != nil || item.progressLabel != "排队中"
         beginDownload(for: id, isRetry: isRetry)
     }
 
@@ -314,14 +314,14 @@ final class QueueStore: ObservableObject {
         guard activeDownloadCount < maximumConcurrentDownloads else {
             update(id) {
                 $0.state = .queued
-                $0.progressLabel = "Waiting for download slot"
+                $0.progressLabel = "等待下载槽位"
             }
             save()
             return
         }
         update(id) {
             $0.state = .downloading
-            $0.progressLabel = isRetry ? "Resuming download…" : "Preparing download…"
+            $0.progressLabel = isRetry ? "继续下载…" : "准备下载…"
             $0.errorMessage = nil
         }
         save()
@@ -510,7 +510,7 @@ final class QueueStore: ObservableObject {
         case .progress(let progress, let label):
             update(id) {
                 $0.progress = progress
-                $0.progressLabel = label.isEmpty ? "Downloading…" : label
+                $0.progressLabel = label.isEmpty ? "下载中…" : label
             }
         }
     }
@@ -530,7 +530,7 @@ final class QueueStore: ObservableObject {
                 $0.subtitleFilePath = downloaded.subtitleFileURL?.path ?? ""
                 $0.state = .ready
                 $0.progress = 1
-                $0.progressLabel = "Ready offline"
+                $0.progressLabel = "已下载"
                 $0.errorMessage = nil
             }
             save()
@@ -571,7 +571,7 @@ final class QueueStore: ObservableObject {
         guard usedRetries < DownloadRetryPolicy.maximumRetries else {
             update(id) {
                 $0.state = .failed
-                $0.progressLabel = "Failed after 3 retries"
+                $0.progressLabel = "重试 3 次后失败"
                 $0.errorMessage = message
             }
             save()
@@ -583,7 +583,7 @@ final class QueueStore: ObservableObject {
         retryAttempts[id] = attempt
         update(id) {
             $0.state = .queued
-            $0.progressLabel = "Retry \(attempt) of \(DownloadRetryPolicy.maximumRetries) in \(delay)s"
+            $0.progressLabel = "第 \(attempt)/\(DownloadRetryPolicy.maximumRetries) 次重试，\(delay) 秒后"
             $0.errorMessage = message
         }
         save()
@@ -617,14 +617,14 @@ final class QueueStore: ObservableObject {
         waitingForNetwork.insert(id)
         update(id) {
             $0.state = .queued
-            $0.progressLabel = "Waiting for connection"
+            $0.progressLabel = "等待网络连接"
             $0.errorMessage = message
         }
         save()
         if !wasWaiting {
             showIntakeNotice(
-                title: "Download paused",
-                detail: "Waiting for an internet connection",
+                title: "下载已暂停",
+                detail: "等待网络连接",
                 systemImage: "wifi.slash"
             )
         }
@@ -632,7 +632,7 @@ final class QueueStore: ObservableObject {
 
     private func resumeWaitingDownloads() {
         let persisted = items
-            .filter { $0.state == .queued && $0.progressLabel == "Waiting for connection" }
+            .filter { $0.state == .queued && $0.progressLabel == "等待网络连接" }
             .map(\.id)
         let ids = waitingForNetwork.union(persisted)
         guard !ids.isEmpty else { return }
@@ -644,16 +644,16 @@ final class QueueStore: ObservableObject {
                 waitForPower(id, showNotice: false)
             }
             showIntakeNotice(
-                title: "Connection restored",
-                detail: "Downloads remain paused in Low Power Mode",
+                title: "网络已恢复",
+                detail: "低电量模式下下载仍保持暂停",
                 systemImage: "battery.25"
             )
             return
         }
 
         showIntakeNotice(
-            title: "Connection restored",
-            detail: ids.count == 1 ? "Resuming download" : "Resuming \(ids.count) downloads",
+            title: "网络已恢复",
+            detail: ids.count == 1 ? "继续下载" : "继续下载 \(ids.count) 个视频",
             systemImage: "wifi"
         )
         for id in ids {
@@ -671,13 +671,13 @@ final class QueueStore: ObservableObject {
         waitingForPower.insert(id)
         update(id) {
             $0.state = .queued
-            $0.progressLabel = "Paused for Low Power Mode"
+            $0.progressLabel = "低电量模式已暂停"
         }
         save()
         if showNotice && !wasWaiting {
             showIntakeNotice(
-                title: "Download paused",
-                detail: "Low Power Mode is on",
+                title: "下载已暂停",
+                detail: "低电量模式已开启",
                 systemImage: "battery.25"
             )
         }
@@ -698,23 +698,23 @@ final class QueueStore: ObservableObject {
             waitForPower(id, showNotice: false)
         }
         showIntakeNotice(
-            title: "Downloads paused",
-            detail: "Low Power Mode is on",
+            title: "下载已暂停",
+            detail: "低电量模式已开启",
             systemImage: "battery.25"
         )
     }
 
     private func resumePowerPausedDownloads() {
         let persisted = items
-            .filter { $0.state == .queued && $0.progressLabel == "Paused for Low Power Mode" }
+            .filter { $0.state == .queued && $0.progressLabel == "低电量模式已暂停" }
             .map(\.id)
         let ids = waitingForPower.union(persisted)
         guard !ids.isEmpty else { return }
 
         if networkMonitor.isOnline {
             showIntakeNotice(
-                title: "Low Power Mode is off",
-                detail: ids.count == 1 ? "Resuming download" : "Resuming \(ids.count) downloads",
+                title: "低电量模式已关闭",
+                detail: ids.count == 1 ? "继续下载" : "继续下载 \(ids.count) 个视频",
                 systemImage: "bolt.fill"
             )
             for id in ids {
@@ -750,7 +750,7 @@ final class QueueStore: ObservableObject {
         guard availableSlots > 0 else { return }
 
         let waiting = items
-            .filter { $0.state == .queued && $0.progressLabel == "Waiting for download slot" }
+            .filter { $0.state == .queued && $0.progressLabel == "等待下载槽位" }
             .sorted { $0.addedAt < $1.addedAt }
             .prefix(availableSlots)
         for item in waiting {

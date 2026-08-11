@@ -27,9 +27,9 @@ final class DownloadEngine {
 
         var errorDescription: String? {
             switch self {
-            case .missingTool(let tool): return "\(tool) is not installed. Install it with Homebrew and retry."
+            case .missingTool(let tool): return "未安装 \(tool)，请用 Homebrew 安装后重试。"
             case .failed(let message): return message
-            case .cancelled: return "Download cancelled."
+            case .cancelled: return "下载已取消。"
             }
         }
     }
@@ -95,7 +95,7 @@ final class DownloadEngine {
                 var pending = ""
                 var recentLines: [String] = []
                 var latestMetadata = Metadata(
-                    title: sourceURL.host ?? "Video",
+                    title: sourceURL.host ?? "视频",
                     author: "",
                     duration: nil,
                     chapters: []
@@ -135,10 +135,10 @@ final class DownloadEngine {
                 }
                 guard process.terminationStatus == 0 else {
                     let useful = recentLines.suffix(10).joined(separator: "\n")
-                    throw EngineError.failed(useful.isEmpty ? "yt-dlp exited with status \(process.terminationStatus)." : useful)
+                    throw EngineError.failed(useful.isEmpty ? "yt-dlp 退出，状态码 \(process.terminationStatus)。" : useful)
                 }
                 guard let fileURL = finishedFile ?? self.discoverFile(for: itemID, in: destination) else {
-                    throw EngineError.failed("The download finished, but its local file could not be found.")
+                    throw EngineError.failed("下载完成，但找不到对应的本地文件。")
                 }
                 completion(.success(Result(
                     fileURL: fileURL,
@@ -191,11 +191,11 @@ final class DownloadEngine {
                 let data = output.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 guard process.terminationStatus == 0 else {
-                    throw EngineError.failed("Could not refresh video chapter metadata.")
+                    throw EngineError.failed("无法刷新视频的章节信息。")
                 }
 
                 var metadata = Metadata(
-                    title: sourceURL.host ?? "Video",
+                    title: sourceURL.host ?? "视频",
                     author: "",
                     duration: nil,
                     chapters: []
@@ -257,7 +257,7 @@ final class DownloadEngine {
                 _ = output.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 guard process.terminationStatus == 0 else {
-                    throw EngineError.failed("Could not cache the video thumbnail.")
+                    throw EngineError.failed("无法缓存视频封面图。")
                 }
                 completion(.success(self.discoverThumbnail(for: itemID, in: destination)))
             } catch {
@@ -309,7 +309,7 @@ final class DownloadEngine {
                 _ = output.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
                 guard process.terminationStatus == 0 else {
-                    throw EngineError.failed("Could not cache subtitles for this video.")
+                    throw EngineError.failed("无法缓存这个视频的字幕。")
                 }
                 completion(.success(self.discoverSubtitle(for: itemID, in: destination)))
             } catch {
@@ -333,7 +333,7 @@ final class DownloadEngine {
             let fraction = min(max((Double(numeric) ?? 0) / 100, 0), 1)
             let speed = fields.count > 2 ? fields[2].trimmingCharacters(in: .whitespaces) : ""
             let eta = fields.count > 3 ? fields[3].trimmingCharacters(in: .whitespaces) : ""
-            let label = [rawPercent.trimmingCharacters(in: .whitespaces), speed, eta.isEmpty ? "" : "ETA \(eta)"]
+            let label = [rawPercent.trimmingCharacters(in: .whitespaces), speed, eta.isEmpty ? "" : "剩余 \(eta)"]
                 .filter { !$0.isEmpty }
                 .joined(separator: " · ")
             onEvent(.progress(fraction, label))

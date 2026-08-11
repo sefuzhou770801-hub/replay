@@ -21,7 +21,7 @@ struct ReplayApp: App {
         .commands {
             CommandGroup(replacing: .newItem) { }
             CommandGroup(after: .appInfo) {
-                Button("Show Downloads Folder") { store.revealMediaFolder() }
+                Button("打开下载文件夹") { store.revealMediaFolder() }
             }
         }
     }

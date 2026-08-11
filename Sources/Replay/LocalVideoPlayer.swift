@@ -53,16 +53,16 @@ private final class FloatingVideoPlayerView: AVPlayerView {
     }
 
     private func configureReturnButton() {
-        let symbol = NSImage(systemSymbolName: "pip.exit", accessibilityDescription: "Return to Replay")
-            ?? NSImage(systemSymbolName: "arrow.up.backward.and.arrow.down.forward", accessibilityDescription: "Return to Replay")
+        let symbol = NSImage(systemSymbolName: "pip.exit", accessibilityDescription: "回到 Replay")
+            ?? NSImage(systemSymbolName: "arrow.up.backward.and.arrow.down.forward", accessibilityDescription: "回到 Replay")
         returnButton.image = symbol?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
         )
         returnButton.imagePosition = .imageOnly
         returnButton.isBordered = false
         returnButton.contentTintColor = .white
-        returnButton.toolTip = "Return to Replay"
-        returnButton.setAccessibilityLabel("Return to Replay")
+        returnButton.toolTip = "回到 Replay"
+        returnButton.setAccessibilityLabel("回到 Replay")
         returnButton.target = self
         returnButton.action = #selector(returnToMainWindow)
         returnButton.translatesAutoresizingMaskIntoConstraints = false

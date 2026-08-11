@@ -9,7 +9,7 @@ enum ChapterMetadata {
         return records.enumerated().compactMap { index, record in
             guard let startTime = number(from: record["start_time"]), startTime >= 0 else { return nil }
             let rawTitle = (record["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let title = rawTitle?.isEmpty == false ? rawTitle! : "Chapter \(index + 1)"
+            let title = rawTitle?.isEmpty == false ? rawTitle! : "第 \(index + 1) 章"
             return VideoChapter(
                 title: title,
                 startTime: startTime,
