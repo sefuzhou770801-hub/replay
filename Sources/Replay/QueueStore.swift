@@ -458,6 +458,31 @@ final class QueueStore: ObservableObject {
         }
     }
 
+    /// 播放时重扫本地字幕：发现 agent 后补的高 rank 文件并热切换。
+    /// 不 guard subtitleFilePath == nil（该字段无字幕时写 ""，nil 判断永不命中）。
+    /// 扫描结果与现值相同则不写不 save（幂等）。找不到字幕写 ""，严禁回写 nil。
+    /// - Parameter completion: 主线程回调扫描后的有效路径（含幂等未变时），供当前界面立即重载字幕。
+    func rescanLocalSubtitle(for id: UUID, completion: ((String) -> Void)? = nil) {
+        guard let existing = item(with: id) else { return }
+        guard existing.state == .ready else {
+            completion?(existing.subtitleFilePath ?? "")
+            return
+        }
+        downloader.discoverLocalSubtitle(itemID: id, in: mediaFolder) { [weak self] subtitleURL in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // 与 refreshSubtitle / 下载完成路径一致：找不到写空字符串，不写 nil
+                let newPath = subtitleURL?.path ?? ""
+                if let current = self.item(with: id), current.subtitleFilePath != newPath {
+                    self.update(id) { $0.subtitleFilePath = newPath }
+                    self.save()
+                }
+                // 无论是否落盘，都把扫描结果交给 UI，避免依赖 onChange（item 值可能未刷新）
+                completion?(newPath)
+            }
+        }
+    }
+
     func remove(_ id: UUID, deleteMedia: Bool = true) {
         cancelRecovery(for: id)
         downloader.cancel(itemID: id)

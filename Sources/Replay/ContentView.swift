@@ -751,7 +751,10 @@ private struct VideoDetail: View {
         chapterLayout
             .onAppear {
                 preparePlayerAfterSelection()
-                loadSubtitles()
+                // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
+                store.rescanLocalSubtitle(for: item.id) { path in
+                    loadSubtitles(path: path)
+                }
                 collapseSidebarForNarrowChapterLayoutIfNeeded()
             }
             .onDisappear {
@@ -760,7 +763,7 @@ private struct VideoDetail: View {
                 volumeHUDDismissalTask?.cancel()
             }
             .onChange(of: item.localFilePath) { _ in preparePlayerAfterSelection() }
-            .onChange(of: item.subtitleFilePath) { _ in loadSubtitles() }
+            .onChange(of: item.subtitleFilePath) { newPath in loadSubtitles(path: newPath) }
             .onChange(of: windowWidth) { _ in collapseSidebarForNarrowChapterLayoutIfNeeded() }
             .onChange(of: sidebarCollapsed) { isCollapsed in
                 guard !isCollapsed, prefersOneSidePane, chaptersPresented else { return }
@@ -1000,10 +1003,19 @@ private struct VideoDetail: View {
         }
     }
 
-    private func loadSubtitles() {
+    /// - Parameter path: 显式路径（重扫回调 / onChange）；nil 时回落到当前 `item`。
+    private func loadSubtitles(path: String? = nil) {
         subtitleLoadTask?.cancel()
         subtitleTrack = nil
-        guard let subtitleURL = item.subtitleFileURL else { return }
+        let subtitleURL: URL?
+        if let path {
+            guard !path.isEmpty else { return }
+            let url = URL(fileURLWithPath: path)
+            subtitleURL = FileManager.default.fileExists(atPath: url.path) ? url : nil
+        } else {
+            subtitleURL = item.subtitleFileURL
+        }
+        guard let subtitleURL else { return }
         subtitleLoadTask = Task {
             let track = await Task.detached(priority: .utility) {
                 VideoSubtitleTrack(contentsOf: subtitleURL)

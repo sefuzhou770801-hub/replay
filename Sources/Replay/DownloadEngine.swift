@@ -448,6 +448,18 @@ final class DownloadEngine {
         }
     }
 
+    /// 纯本地扫描媒体目录字幕，不起进程、不联网。经 metadataQueue 回调，避免主线程 IO。
+    func discoverLocalSubtitle(
+        itemID: UUID,
+        in folder: URL,
+        completion: @escaping (URL?) -> Void
+    ) {
+        metadataQueue.async { [weak self] in
+            guard let self else { return }
+            completion(self.discoverSubtitle(for: itemID, in: folder))
+        }
+    }
+
     private func discoverSubtitle(for itemID: UUID, in folder: URL) -> URL? {
         let prefix = itemID.uuidString + "."
         let supported = Set(["srt", "vtt"])
