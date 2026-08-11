@@ -1296,7 +1296,7 @@ private struct PlaybackControls: View {
                 systemImage: subtitlesEnabled && hasSubtitles ? "captions.bubble.fill" : "captions.bubble",
                 help: hasSubtitles
                     ? (subtitlesEnabled ? "关闭字幕" : "打开字幕")
-                    : "没有可用的英文字幕",
+                    : "没有可用的字幕",
                 isEnabled: hasSubtitles,
                 isSelected: subtitlesEnabled && hasSubtitles,
                 action: toggleSubtitles

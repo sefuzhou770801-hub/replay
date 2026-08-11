@@ -75,7 +75,11 @@ final class DownloadEngine {
                     "--convert-thumbnails", "jpg",
                     "--write-subs",
                     "--write-auto-subs",
-                    "--sub-langs", "en.*,-live_chat",
+                    // 中文优先：简/繁 + 英译中（*-en）；英文回退。
+                    // 不用 zh.* / en.* 通配：会匹配 zh-Hans-de 等无关变体，请求过多易 429。
+                    "--sub-langs", "zh-Hans,zh-Hant,zh-Hans-en,zh-Hant-en,en,en-orig,-live_chat",
+                    // 某一轨字幕 429/失败时仍完成视频下载；字幕由 discoverSubtitle / 后续补拉处理。
+                    "--ignore-errors",
                     "--sub-format", "vtt/best",
                     "--convert-subs", "srt",
                     "--ffmpeg-location", ffmpeg.deletingLastPathComponent().path,
@@ -292,7 +296,10 @@ final class DownloadEngine {
                     "--no-color",
                     "--write-subs",
                     "--write-auto-subs",
-                    "--sub-langs", "en.*,-live_chat",
+                    // 中文优先：简/繁 + 英译中（*-en）；英文回退。
+                    // 不用 zh.* / en.* 通配：会匹配 zh-Hans-de 等无关变体，请求过多易 429。
+                    "--sub-langs", "zh-Hans,zh-Hant,zh-Hans-en,zh-Hant-en,en,en-orig,-live_chat",
+                    "--ignore-errors",
                     "--sub-format", "vtt/best",
                     "--convert-subs", "srt",
                     "--ffmpeg-location", ffmpeg.deletingLastPathComponent().path,
@@ -463,11 +470,16 @@ final class DownloadEngine {
     }
 
     private func subtitleRank(_ url: URL) -> Int {
+        // 数值越小越优先：中文各变体 > 英文 > 其他
         let name = url.deletingPathExtension().lastPathComponent.lowercased()
-        if name.hasSuffix(".en") { return 0 }
-        if name.hasSuffix(".en-orig") { return 1 }
-        if name.range(of: #"\.en[-_]"#, options: .regularExpression) != nil { return 2 }
-        return 3
+        if name.hasSuffix(".zh") { return 0 }
+        if name.hasSuffix(".zh-hans") || name.hasSuffix(".zh-cn") { return 1 }
+        if name.hasSuffix(".zh-hant") || name.hasSuffix(".zh-tw") || name.hasSuffix(".zh-hk") { return 2 }
+        if name.range(of: #"\.zh[-_]"#, options: .regularExpression) != nil { return 3 }
+        if name.hasSuffix(".en") { return 10 }
+        if name.hasSuffix(".en-orig") { return 11 }
+        if name.range(of: #"\.en[-_]"#, options: .regularExpression) != nil { return 12 }
+        return 100
     }
 
     private func setProcess(_ process: Process, for itemID: UUID) {
