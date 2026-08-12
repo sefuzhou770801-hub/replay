@@ -93,6 +93,27 @@ struct SubtitleParserCheck {
         precondition(normalCues[0].text == "Hello")
         precondition(normalCues[1].text == "World")
 
+        // 极短但内容无关（审查 S1）：不得因时长邻接误删
+        let distinctShort = """
+        1
+        00:00:01,000 --> 00:00:01,040
+        [door slams]
+
+        2
+        00:00:01,040 --> 00:00:03,000
+        Hello
+        """
+        let distinctCues = VideoSubtitleTrack.parse(distinctShort)
+        precondition(
+            distinctCues.count == 2,
+            "distinct short cue must be kept, got \(distinctCues.count)"
+        )
+        precondition(distinctCues[0].text == "[door slams]")
+        precondition(distinctCues[0].startTime == 1.0)
+        precondition(distinctCues[0].endTime == 1.04)
+        precondition(distinctCues[1].text == "Hello")
+        precondition(distinctCues[1].startTime == 1.04)
+
         if CommandLine.arguments.count > 1 {
             let downloadedURL = URL(fileURLWithPath: CommandLine.arguments[1])
             guard let downloadedTrack = VideoSubtitleTrack(contentsOf: downloadedURL) else {

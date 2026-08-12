@@ -61,7 +61,8 @@ struct VideoSubtitleTrack: Equatable, Sendable {
     }
 
     /// 去掉 YouTube 自动字幕的「10ms 闪现 + 扩展句」成对重复，保留双语两行完整 cue。
-    /// 不改动 cue 文本结构（原文\\n译文），只删被下一条立刻覆盖的极短帧。
+    /// 除时长/邻接外必须核对文本连续性：闪现须与下一条相同、为其前缀，或为其子集（滚动窗）；
+    /// 内容无关的短 cue（如音效标注）一律保留。
     static func collapseRollingFlashCues(_ cues: [VideoSubtitleCue]) -> [VideoSubtitleCue] {
         guard cues.count > 1 else { return cues }
         var kept: [VideoSubtitleCue] = []
@@ -74,10 +75,11 @@ struct VideoSubtitleTrack: Equatable, Sendable {
                 let next = cues[index + 1]
                 let gap = next.startTime - cue.endTime
                 let nextDuration = next.endTime - next.startTime
-                // 闪现帧结束处紧接下一条，且下一条更长 → 丢弃闪现，保留扩展句。
+                // 时长邻接 + 文本连续（相同 / 前缀 / 子集）才折叠。
                 if gap >= -0.001,
                    gap < rollingFlashGapTolerance,
-                   nextDuration > duration {
+                   nextDuration > duration,
+                   isRollingFlashContinuation(cue.text, of: next.text) {
                     index += 1
                     continue
                 }
@@ -86,6 +88,41 @@ struct VideoSubtitleTrack: Equatable, Sendable {
             index += 1
         }
         return kept
+    }
+
+    /// 判断极短 cue 是否为下一条的滚动闪现（文本相同、前缀或子集），而非独立内容。
+    static func isRollingFlashContinuation(_ flash: String, of next: String) -> Bool {
+        if flash == next { return true }
+        if next.hasPrefix(flash) { return true }
+
+        let flashLines = flash
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let nextLines = next
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let flashFirst = flashLines.first, let nextFirst = nextLines.first else { return false }
+
+        // 原文首行扩展：YouTube 滚动主轨几乎总是首行前缀关系。
+        if nextFirst.hasPrefix(flashFirst) { return true }
+
+        // 逐行前缀：闪现各行是下一条对应行的前缀（双语两行同时扩展）。
+        if flashLines.count <= nextLines.count,
+           zip(flashLines, nextLines).allSatisfy({ flashLine, nextLine in
+               nextLine.hasPrefix(flashLine)
+           }) {
+            return true
+        }
+
+        // 去换行后的前缀 / 连续子串子集（行切分不一致时）。
+        let flashJoined = flashLines.joined(separator: " ")
+        let nextJoined = nextLines.joined(separator: " ")
+        if nextJoined.hasPrefix(flashJoined) { return true }
+        if !flashJoined.isEmpty, nextJoined.contains(flashJoined) { return true }
+
+        return false
     }
 
     private static func parseTimestamp(_ rawValue: String) -> Double? {
