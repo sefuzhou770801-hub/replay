@@ -50,10 +50,17 @@ struct WatchItem: Identifiable, Codable, Hashable {
     }
 
     var sourceName: String {
-        guard let host = URL(string: urlString)?.host?.lowercased() else { return "视频" }
-        if host.contains("youtu") { return "YOUTUBE" }
+        guard var host = URL(string: urlString)?.host?.lowercased() else { return "视频" }
+        if host.contains("youtu") { return "YouTube" }
         if host == "x.com" || host.hasSuffix(".x.com") || host.contains("twitter") { return "X" }
-        return host.uppercased()
+        if host.contains("bilibili") || host == "b23.tv" || host.hasSuffix(".b23.tv") { return "哔哩哔哩" }
+        if host.contains("xiaohongshu") || host.contains("xhslink") { return "小红书" }
+        if host.hasPrefix("www.") {
+            host = String(host.dropFirst(4))
+        }
+        let label = host.split(separator: ".").first.map(String.init) ?? host
+        guard let first = label.first else { return "视频" }
+        return String(first).uppercased() + label.dropFirst()
     }
 
     var localFileURL: URL? {

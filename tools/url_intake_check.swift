@@ -26,6 +26,31 @@ struct URLIntakeCheck {
         precondition(URLIntake.webURLs(from: "No links in this paragraph.").isEmpty)
         precondition(URLIntake.webURL(from: "https://example.com/single")?.absoluteString == "https://example.com/single")
 
+        // B站：去掉跟踪参数，保留分 P
+        let bilibiliTracked = URL(string: "https://www.bilibili.com/video/BV1GJ411x7h7?spm_id_from=333.337&vd_source=abc&p=2")!
+        precondition(
+            URLIntake.canonicalString(for: bilibiliTracked) == "https://www.bilibili.com/video/BV1GJ411x7h7?p=2",
+            "Bilibili should strip tracking but keep p="
+        )
+        let bilibiliPlain = URL(string: "https://www.bilibili.com/video/BV1GJ411x7h7?spm_id_from=333.337")!
+        precondition(
+            URLIntake.canonicalString(for: bilibiliPlain) == "https://www.bilibili.com/video/BV1GJ411x7h7",
+            "Bilibili without p= should drop all query"
+        )
+
+        // 小红书：去掉跟踪参数
+        let xhs = URL(string: "https://www.xiaohongshu.com/explore/64abc?xsec_token=foo&share_id=bar")!
+        precondition(
+            URLIntake.canonicalString(for: xhs) == "https://www.xiaohongshu.com/explore/64abc",
+            "Xiaohongshu should strip tracking query"
+        )
+
+        // 短链保持原样（不做网络展开）
+        let b23 = URL(string: "https://b23.tv/abcdef")!
+        precondition(URLIntake.canonicalString(for: b23) == "https://b23.tv/abcdef")
+        let xhslink = URL(string: "https://xhslink.com/m/xyz")!
+        precondition(URLIntake.canonicalString(for: xhslink) == "https://xhslink.com/m/xyz")
+
         let largeBlock = (0..<250)
             .map { "Item \($0): https://example.com/watch/\($0)" }
             .joined(separator: "\n")

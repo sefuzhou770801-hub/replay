@@ -18,7 +18,8 @@ struct ResumeModelCheck {
             errorMessage: nil,
             playbackPosition: 123.5,
             chapters: [VideoChapter(title: "Intro", startTime: 0, endTime: 60)],
-            thumbnailFilePath: nil
+            thumbnailFilePath: nil,
+            subtitleFilePath: nil
         )
         let encoded = try JSONEncoder().encode(sample)
         let decoded = try JSONDecoder().decode(WatchItem.self, from: encoded)
@@ -52,6 +53,38 @@ struct ResumeModelCheck {
             decoder.dateDecodingStrategy = .iso8601
             _ = try decoder.decode([WatchItem].self, from: queueData)
         }
+
+        // sourceName 展示映射
+        func source(for url: String) -> String {
+            WatchItem(
+                id: UUID(),
+                urlString: url,
+                title: "t",
+                author: "",
+                duration: nil,
+                addedAt: Date(),
+                watchedAt: nil,
+                state: .queued,
+                progress: 0,
+                progressLabel: "queued",
+                localFilePath: nil,
+                errorMessage: nil,
+                playbackPosition: nil,
+                chapters: nil,
+                thumbnailFilePath: nil,
+                subtitleFilePath: nil
+            ).sourceName
+        }
+        precondition(source(for: "https://www.youtube.com/watch?v=abc") == "YouTube")
+        precondition(source(for: "https://youtu.be/abc") == "YouTube")
+        precondition(source(for: "https://x.com/user/status/1") == "X")
+        precondition(source(for: "https://twitter.com/user/status/1") == "X")
+        precondition(source(for: "https://www.bilibili.com/video/BV1GJ411x7h7") == "哔哩哔哩")
+        precondition(source(for: "https://b23.tv/abcdef") == "哔哩哔哩")
+        precondition(source(for: "https://www.xiaohongshu.com/explore/1") == "小红书")
+        precondition(source(for: "https://xhslink.com/m/xyz") == "小红书")
+        precondition(source(for: "https://www.vimeo.com/123") == "Vimeo")
+        precondition(source(for: "https://vimeo.com/123") == "Vimeo")
 
         print("resume_model_check=passed")
     }

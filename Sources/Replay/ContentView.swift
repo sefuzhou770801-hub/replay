@@ -37,7 +37,7 @@ struct ContentView: View {
         .onPreferenceChange(URLBarFramePreferenceKey.self) { urlBarFrame = $0 }
         .background {
             ZStack {
-                WindowStyleConfigurator(title: store.selectedItem?.title ?? "Replay")
+                WindowStyleConfigurator(title: store.selectedItem?.title ?? "Stash")
                     .frame(width: 0, height: 0)
 
                 WindowWidthReader { width in
@@ -415,6 +415,9 @@ private struct QueueRow: View, Equatable {
                 title
 
                 HStack(spacing: 5) {
+                    Circle()
+                        .fill(sourceBrandColor(for: item.sourceName))
+                        .frame(width: 6, height: 6)
                     Text(displaySource)
                     Circle()
                         .fill(Color.secondary.opacity(0.55))
@@ -460,7 +463,7 @@ private struct QueueRow: View, Equatable {
         if isEditingTitle {
             TextField("视频标题", text: $draftTitle)
                 .textFieldStyle(.plain)
-                .font(.callout.weight(.semibold))
+                .font(.system(size: 13, weight: .medium))
                 .focused($isTitleFocused)
                 .onSubmit { finishEditing(save: true) }
                 .onExitCommand { finishEditing(save: false) }
@@ -478,10 +481,10 @@ private struct QueueRow: View, Equatable {
                 }
         } else {
             Text(item.title)
-                .font(.callout.weight(.semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2, perform: beginEditing)
                 .help("双击可重命名")
@@ -519,7 +522,22 @@ private struct QueueRow: View, Equatable {
     }
 
     private var displaySource: String {
-        item.sourceName.lowercased().capitalized
+        item.sourceName
+    }
+
+    private func sourceBrandColor(for sourceName: String) -> Color {
+        switch sourceName {
+        case "YouTube":
+            return Color(red: 1, green: 0, blue: 0x33 / 255)
+        case "哔哩哔哩":
+            return Color(red: 0, green: 0xA1 / 255, blue: 0xD6 / 255)
+        case "X":
+            return Color.primary
+        case "小红书":
+            return Color(red: 1, green: 0x24 / 255, blue: 0x42 / 255)
+        default:
+            return Color.secondary.opacity(0.7)
+        }
     }
 
     private var statusText: String {
@@ -813,7 +831,7 @@ private struct VideoDetail: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
-                    .font(.headline.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -1330,11 +1348,11 @@ private struct PlaybackControls: View {
             )
 
             AirPlayRoutePicker()
-                .frame(width: 34, height: 34)
+                .frame(width: 32, height: 32)
                 .background {
                     Circle()
                         .fill(snapshot.isExternalPlaybackActive
-                            ? Color.accentColor.opacity(0.16)
+                            ? Color.primary.opacity(0.12)
                             : Color.primary.opacity(0.04))
                 }
                 .help(snapshot.isExternalPlaybackActive ? "AirPlay 已连接" : "选择 AirPlay 设备")
@@ -1429,7 +1447,7 @@ private struct PlaybackSpeedMenu: View {
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, 9)
-            .frame(height: 30)
+            .frame(height: 32)
             .contentShape(Capsule())
             .watchGlass(.clear, interactive: true, in: Capsule())
             .overlay {
@@ -1739,12 +1757,14 @@ private struct PlayerControlButton: View {
     let action: () -> Void
     @State private var isHovering = false
 
+    private let controlSize: CGFloat = 32
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(isPrimary ? Color.white : (isSelected ? Color.accentColor : Color.primary))
-                .frame(width: 34, height: 34)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.primary.opacity(isPrimary || isSelected ? 1 : 0.85))
+                .frame(width: controlSize, height: controlSize)
                 .background {
                     Circle()
                         .fill(buttonBackground)
@@ -1761,9 +1781,9 @@ private struct PlayerControlButton: View {
     }
 
     private var buttonBackground: Color {
-        if isPrimary { return .accentColor }
-        if isSelected { return Color.accentColor.opacity(0.16) }
-        return Color.primary.opacity(isHovering && isEnabled ? 0.1 : 0)
+        if isPrimary { return Color.primary.opacity(0.14) }
+        if isSelected { return Color.primary.opacity(0.12) }
+        return Color.primary.opacity(isHovering && isEnabled ? 0.08 : 0.04)
     }
 }
 
@@ -1941,8 +1961,8 @@ private struct ChapterSidebar: View {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 Text(formatTime(chapter.startTime))
                                     .font(.caption.monospacedDigit())
-                                    .foregroundStyle(isCurrentChapter(chapter) ? Color.accentColor : Color.secondary)
-                                    .frame(width: 48, alignment: .trailing)
+                                    .foregroundStyle(isCurrentChapter(chapter) ? Color.primary : Color.secondary)
+                                    .frame(width: 52, alignment: .leading)
                                 Text(chapter.title)
                                     .font(.callout.weight(isCurrentChapter(chapter) ? .semibold : .regular))
                                     .foregroundStyle(.primary)
@@ -1956,7 +1976,7 @@ private struct ChapterSidebar: View {
                             .background {
                                 if isCurrentChapter(chapter) {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color.accentColor.opacity(0.13))
+                                        .fill(Color.primary.opacity(0.1))
                                 }
                             }
                             .contentShape(Rectangle())
@@ -1992,8 +2012,8 @@ private struct ChapterSidebar: View {
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                                     Text(formatTime(cue.startTime))
                                         .font(.caption.monospacedDigit())
-                                        .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary)
-                                        .frame(width: 48, alignment: .trailing)
+                                        .foregroundStyle(isCurrent ? Color.primary : Color.secondary)
+                                        .frame(width: 52, alignment: .leading)
                                     cueTextStack(cue.text, isCurrent: isCurrent)
                                     Spacer(minLength: 0)
                                 }
@@ -2002,7 +2022,7 @@ private struct ChapterSidebar: View {
                                 .background {
                                     if isCurrent {
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(Color.accentColor.opacity(0.13))
+                                            .fill(Color.primary.opacity(0.1))
                                     }
                                 }
                                 .contentShape(Rectangle())
@@ -2351,7 +2371,7 @@ private struct EmptyLibraryView: View {
                     )
                 Text(isDropTarget ? "松手存入队列" : "随时可以开始")
                     .font(.title2.weight(.semibold))
-                Text("复制视频链接后按 ⌘V。Replay 会下载一份干净的离线副本，并记住你看到哪儿。")
+                Text("复制视频链接后按 ⌘V。Stash 会下载一份干净的离线副本，并记住你看到哪儿。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

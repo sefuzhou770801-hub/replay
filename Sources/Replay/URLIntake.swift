@@ -81,6 +81,22 @@ enum URLIntake {
         if let statusIndex = parts.firstIndex(of: "status"), statusIndex > 0, parts.count > statusIndex + 1 {
             return "https://x.com/\(parts[statusIndex - 1])/status/\(parts[statusIndex + 1])"
         }
+
+        // B站：去掉跟踪参数，保留分 P（p=）
+        if host.contains("bilibili.com") {
+            components.scheme = "https"
+            let pageItem = components.queryItems?.first(where: { $0.name == "p" && ($0.value?.isEmpty == false) })
+            components.queryItems = pageItem.map { [$0] }
+            return components.url?.absoluteString ?? url.absoluteString
+        }
+
+        // 小红书：去掉跟踪参数；短链 host 保持原样（不做网络展开）
+        if host.contains("xiaohongshu.com") {
+            components.scheme = "https"
+            components.queryItems = nil
+            return components.url?.absoluteString ?? url.absoluteString
+        }
+
         return components.url?.absoluteString ?? url.absoluteString
     }
 
