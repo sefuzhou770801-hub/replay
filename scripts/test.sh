@@ -44,3 +44,13 @@ compile_and_run activation_click \
 compile_and_run replay_migration \
     "$project_dir/Sources/Replay/ReplayMigration.swift" \
     "$project_dir/tools/replay_migration_check.swift"
+
+compile_and_run queue_row_meta \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/ChapterMetadata.swift" \
+    "$project_dir/Sources/Replay/QueueRowMeta.swift" \
+    "$project_dir/tools/queue_row_meta_check.swift"
+
+compile_and_run side_pane_selection \
+    "$project_dir/Sources/Replay/SidePaneSelection.swift" \
+    "$project_dir/tools/side_pane_selection_check.swift"
