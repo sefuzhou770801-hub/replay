@@ -55,9 +55,9 @@
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Stash</string>
+  <string>openvideo</string>
   <key>CFBundleDisplayName</key>
-  <string>Stash</string>
+  <string>openvideo</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
