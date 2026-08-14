@@ -32,4 +32,10 @@ enum QueueRowMeta {
             return "已存到本地"
         }
     }
+
+    /// 本机文件还在才给出访达定位路径；缺文件或空路径不显示该菜单项。
+    static func localFileToReveal(path: String?, exists: (String) -> Bool) -> String? {
+        guard let path, !path.isEmpty, exists(path) else { return nil }
+        return path
+    }
 }

@@ -243,6 +243,12 @@ struct ContentView: View {
                 Button("重试下载") { store.startDownload(for: item.id) }
             }
             Button("打开原网页") { store.openOriginal(item.id) }
+            if QueueRowMeta.localFileToReveal(
+                path: item.localFilePath,
+                exists: { FileManager.default.fileExists(atPath: $0) }
+            ) != nil {
+                Button("在访达中显示") { store.revealLocalFile(item.id) }
+            }
             Divider()
             Button("删除", role: .destructive) { itemToDelete = item }
         }
@@ -2148,7 +2154,13 @@ private struct ChapterSidebar: View {
 
         if let hint, cues.indices.contains(hint) {
             if cues[hint].startTime <= time, time < cues[hint].endTime {
-                return hint
+                var last = hint
+                while last + 1 < cues.count,
+                      cues[last + 1].startTime <= time,
+                      time < cues[last + 1].endTime {
+                    last += 1
+                }
+                return last
             }
             if hint + 1 < cues.count,
                cues[hint + 1].startTime <= time,

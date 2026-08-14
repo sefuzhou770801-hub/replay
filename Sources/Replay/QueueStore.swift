@@ -513,6 +513,14 @@ final class QueueStore: ObservableObject {
         NSWorkspace.shared.open(mediaFolder)
     }
 
+    func revealLocalFile(_ id: UUID) {
+        guard let path = QueueRowMeta.localFileToReveal(
+            path: item(with: id)?.localFilePath,
+            exists: { FileManager.default.fileExists(atPath: $0) }
+        ) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
     private func migrateQueueToNewestFirstIfNeeded() {
         let defaults = UserDefaults.standard
         guard defaults.integer(forKey: QueueOrderPolicy.versionDefaultsKey) < QueueOrderPolicy.currentVersion else {

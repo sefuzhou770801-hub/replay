@@ -33,6 +33,11 @@ struct QueueRowMetaCheck {
         precondition(QueueRowMeta.statusText(state: .downloading, progressLabel: "下载中…") == "下载中…")
         precondition(QueueRowMeta.statusText(state: .failed, progressLabel: "重试 3 次后失败") == "重试 3 次后失败")
 
+        precondition(QueueRowMeta.localFileToReveal(path: nil, exists: { _ in true }) == nil)
+        precondition(QueueRowMeta.localFileToReveal(path: "", exists: { _ in true }) == nil)
+        precondition(QueueRowMeta.localFileToReveal(path: "/tmp/gone.mp4", exists: { _ in false }) == nil)
+        precondition(QueueRowMeta.localFileToReveal(path: "/tmp/ready.mp4", exists: { $0 == "/tmp/ready.mp4" }) == "/tmp/ready.mp4")
+
         print("queue_row_meta_check=passed")
     }
 }
