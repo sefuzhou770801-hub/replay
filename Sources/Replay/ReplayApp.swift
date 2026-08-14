@@ -37,6 +37,8 @@ struct ReplayApp: App {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(appDelegate.inbox)
+                .preferredColorScheme(.dark)
+                .tint(OpenMyChrome.ink)
                 .background(MainWindowOpenBridge())
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     store.flushPendingSaves()

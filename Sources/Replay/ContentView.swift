@@ -105,21 +105,8 @@ struct ContentView: View {
 
     private var sidebar: some View {
         ZStack(alignment: .topLeading) {
-            Color(nsColor: .windowBackgroundColor)
-                .opacity(0.38)
+            OpenMyChrome.canvas
                 .ignoresSafeArea()
-
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .ignoresSafeArea()
-
-            LinearGradient(
-                colors: [Color.white.opacity(0.055), Color.clear, Color.accentColor.opacity(0.025)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 DropAndAddBar(
@@ -368,7 +355,7 @@ private struct IntakeToast: View {
             Image(systemName: notice.systemImage)
                 .font(.title3.weight(.semibold))
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(OpenMyChrome.ink)
                 .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -391,11 +378,7 @@ private struct IntakeToast: View {
         .padding(.vertical, 10)
         .padding(.leading, 13)
         .padding(.trailing, 9)
-        .watchGlass(.regular, interactive: true, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.18))
-        }
+        .watchGlass(.regular, in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous))
         .frame(maxWidth: 430)
     }
 }
@@ -430,13 +413,13 @@ private struct QueueRow: View, Equatable {
                         .lineLimit(1)
                 }
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(item.state == .failed ? Color.red : Color.secondary)
+                .foregroundStyle(item.state == .failed ? OpenMyChrome.rec : OpenMyChrome.muted)
 
                 if item.state == .downloading {
                     ProgressView(value: item.progress)
                         .progressViewStyle(.linear)
                         .controlSize(.mini)
-                        .tint(.accentColor)
+                        .tint(OpenMyChrome.ink)
                 }
             }
 
@@ -447,15 +430,15 @@ private struct QueueRow: View, Equatable {
         .padding(.vertical, 8)
         .background {
             if isSelected {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
+                RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                    .fill(OpenMyChrome.raise)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(Color.accentColor.opacity(0.2))
+                        RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                            .strokeBorder(OpenMyChrome.hair)
                     }
             }
         }
-        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous))
         .onTapGesture(perform: select)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -478,15 +461,15 @@ private struct QueueRow: View, Equatable {
                 }
                 .padding(.horizontal, 5)
                 .padding(.vertical, 3)
-                .background(Color(nsColor: .textBackgroundColor).opacity(0.82), in: RoundedRectangle(cornerRadius: 6))
+                .background(OpenMyChrome.raise, in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusSm, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(Color.accentColor.opacity(0.85), lineWidth: 1.5)
+                    RoundedRectangle(cornerRadius: OpenMyChrome.radiusSm, style: .continuous)
+                        .strokeBorder(OpenMyChrome.fieldBorder)
                 }
         } else {
             Text(item.title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.primary)
+                .foregroundStyle(OpenMyChrome.ink)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .contentShape(Rectangle())
@@ -547,7 +530,7 @@ private struct QueueThumbnail: View {
                     .aspectRatio(contentMode: .fill)
             } else {
                 LinearGradient(
-                    colors: [Color.accentColor.opacity(0.32), Color.secondary.opacity(0.12)],
+                    colors: [OpenMyChrome.raise, OpenMyChrome.canvas],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -571,7 +554,7 @@ private struct QueueThumbnail: View {
                             .font(.caption2.bold())
                             .foregroundStyle(.white)
                             .padding(5)
-                            .background(Color.green.opacity(0.9), in: Circle())
+                            .background(OpenMyChrome.success, in: Circle())
                     }
                     Spacer()
                     if let duration = item.duration, item.state == .ready {
@@ -587,16 +570,16 @@ private struct QueueThumbnail: View {
             }
         }
         .frame(width: 96, height: 54)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenMyChrome.radiusMd, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isSelected ? Color.accentColor.opacity(0.5) : Color.primary.opacity(0.1))
+            RoundedRectangle(cornerRadius: OpenMyChrome.radiusMd, style: .continuous)
+                .strokeBorder(isSelected ? OpenMyChrome.ink.opacity(0.35) : OpenMyChrome.hair)
         }
         .overlay(alignment: .bottomLeading) {
             if let duration = item.duration, duration > 0, item.resumablePosition > 0 {
                 GeometryReader { geometry in
                     Capsule()
-                        .fill(Color.accentColor)
+                        .fill(OpenMyChrome.ink)
                         .frame(width: geometry.size.width * min(item.resumablePosition / duration, 1), height: 3)
                 }
                 .frame(height: 3)
@@ -648,10 +631,10 @@ private struct SidebarSectionHeader: View {
                 .monospacedDigit()
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(OpenMyChrome.muted)
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .background(.ultraThinMaterial)
+        .background(OpenMyChrome.canvas)
     }
 }
 
@@ -809,13 +792,14 @@ private struct VideoDetail: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
                     .font(.title3.weight(.semibold))
+                    .foregroundStyle(OpenMyChrome.ink)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 if !item.author.isEmpty {
                     Text(item.author)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OpenMyChrome.muted)
                         .lineLimit(1)
                 }
             }
@@ -839,7 +823,7 @@ private struct VideoDetail: View {
                 .fixedSize()
             }
         }
-        .padding(.leading, sidebarCollapsed ? 154 : 14)
+        .padding(.leading, DetailHeaderMetrics.leadingPadding(sidebarCollapsed: sidebarCollapsed))
         .padding(.trailing, 14)
         .frame(height: 56)
     }
@@ -986,10 +970,10 @@ private struct VideoDetail: View {
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: OpenMyChrome.radiusXl, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12))
+            RoundedRectangle(cornerRadius: OpenMyChrome.radiusXl, style: .continuous)
+                .strokeBorder(OpenMyChrome.hair)
         }
     }
 
@@ -1160,27 +1144,17 @@ private struct DetailBackdrop: View, Equatable {
 
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
+            OpenMyChrome.canvas
 
             if let image = ThumbnailImageCache.image(for: thumbnailURL) {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .blur(radius: 90)
-                    .saturation(1.15)
-                    .opacity(0.12)
+                    .saturation(0.4)
+                    .opacity(0.06)
                     .scaleEffect(1.15)
             }
-
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.88)
-
-            LinearGradient(
-                colors: [Color.white.opacity(0.025), Color.clear, Color.black.opacity(0.025)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
         }
     }
 }
@@ -1209,12 +1183,11 @@ private struct PlayerVolumeHUD: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
-        .background(Color.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(OpenMyChrome.raise, in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.14))
+            RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                .strokeBorder(OpenMyChrome.hair)
         }
-        .shadow(color: .black.opacity(0.35), radius: 14, y: 5)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("音量")
         .accessibilityValue(isMuted ? "已静音" : "百分之 \(Int((volume * 100).rounded()))")
@@ -1251,11 +1224,7 @@ private struct PlaybackControls: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .watchGlass(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.14))
-        }
+        .watchGlass(.regular, in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusXl, style: .continuous))
     }
 
     private func controlRow(showRemainingTime: Bool, spacing: CGFloat) -> some View {
@@ -1489,11 +1458,10 @@ private struct ChapterScrubber: View {
                     .offset(y: 31)
 
                 Circle()
-                    .fill(Color.accentColor)
+                    .fill(OpenMyChrome.ink)
                     .overlay {
-                        Circle().strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                        Circle().strokeBorder(OpenMyChrome.canvas, lineWidth: 2)
                     }
-                    .shadow(color: Color.accentColor.opacity(0.32), radius: 3)
                     .frame(width: 13, height: 13)
                     .position(x: thumbPosition(for: value, width: width), y: 35)
 
@@ -1501,7 +1469,7 @@ private struct ChapterScrubber: View {
                     Circle()
                         .fill(Color.primary.opacity(0.8))
                         .overlay {
-                            Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5)
+                            Circle().strokeBorder(OpenMyChrome.canvas, lineWidth: 1.5)
                         }
                         .frame(width: 8, height: 8)
                         .position(x: xPosition(for: previewTime, width: width), y: 35)
@@ -1558,7 +1526,7 @@ private struct ChapterScrubber: View {
 
                 if geometry.filledWidth > 0 {
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(Color.accentColor)
+                        .fill(OpenMyChrome.ink)
                         .frame(width: geometry.filledWidth, height: 8)
                         .offset(x: geometry.x)
                 }
@@ -1594,15 +1562,10 @@ private struct ChapterScrubber: View {
                 .padding(.horizontal, 11)
                 .padding(.vertical, 7)
                 .frame(width: popoverWidth, alignment: .leading)
-                .watchGlass(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.12))
-                }
-                .shadow(color: .black.opacity(0.16), radius: 7, y: 2)
+                .watchGlass(.regular, in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusMd, style: .continuous))
 
             Capsule()
-                .fill(Color.accentColor.opacity(0.85))
+                .fill(OpenMyChrome.ink.opacity(0.85))
                 .frame(width: 2, height: 6)
                 .offset(x: pointerOffset)
         }
@@ -1758,9 +1721,8 @@ private struct PlayerControlButton: View {
     }
 
     private var buttonBackground: Color {
-        if isPrimary { return Color.primary.opacity(0.14) }
-        if isSelected { return Color.primary.opacity(0.12) }
-        return Color.primary.opacity(isHovering && isEnabled ? 0.08 : 0.04)
+        if isPrimary || isSelected { return OpenMyChrome.raise }
+        return isHovering && isEnabled ? OpenMyChrome.raise.opacity(0.7) : OpenMyChrome.canvas.opacity(0.01)
     }
 }
 
@@ -1819,7 +1781,7 @@ private struct ChapterSidebar: View {
                 }
             }
         }
-        .background(.ultraThinMaterial)
+        .background(OpenMyChrome.canvas)
         .onAppear {
             lastTrackedTime = currentTime
             refreshActiveCue(at: currentTime)
@@ -1879,7 +1841,7 @@ private struct ChapterSidebar: View {
             )
         }
         .padding(2)
-        .background(Color.primary.opacity(0.06), in: Capsule())
+        .background(OpenMyChrome.raise, in: Capsule())
     }
 
     private func modeButton(title: String, mode: SidePaneMode) -> some View {
@@ -1889,13 +1851,13 @@ private struct ChapterSidebar: View {
         } label: {
             Text(title)
                 .font(.caption.weight(isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                .foregroundStyle(isSelected ? OpenMyChrome.ink : OpenMyChrome.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .frame(minWidth: 40)
                 .background {
                     if isSelected {
-                        Capsule().fill(Color.primary.opacity(0.12))
+                        Capsule().fill(OpenMyChrome.canvas)
                     }
                 }
                 .contentShape(Capsule())
@@ -2273,7 +2235,7 @@ private struct DropAndAddBar: View {
         HStack(spacing: 8) {
             Image(systemName: "link")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isDropTarget ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isDropTarget ? OpenMyChrome.ink : OpenMyChrome.muted)
             TextField("粘贴链接或文字", text: $urlText)
                 .textFieldStyle(.plain)
                 .frame(minWidth: 0, maxWidth: .infinity)
@@ -2293,13 +2255,12 @@ private struct DropAndAddBar: View {
         .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32)
         .watchGlass(
             .clear,
-            tint: isDropTarget ? Color.accentColor.opacity(0.12) : nil,
-            interactive: true,
-            in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+            tint: isDropTarget ? OpenMyChrome.raise : OpenMyChrome.canvas,
+            in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(isDropTarget ? Color.accentColor.opacity(0.5) : Color.primary.opacity(0.07))
+            RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                .strokeBorder(isDropTarget ? OpenMyChrome.ink.opacity(0.35) : OpenMyChrome.fieldBorder)
         }
         .background {
             GeometryReader { geometry in
@@ -2329,11 +2290,11 @@ private struct EmptyLibraryView: View {
             VStack(spacing: 14) {
                 Image(systemName: isDropTarget ? "arrow.down" : "play.fill")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isDropTarget ? Color.white : Color.accentColor)
+                    .foregroundStyle(isDropTarget ? OpenMyChrome.canvas : OpenMyChrome.ink)
                     .frame(width: 70, height: 70)
                     .watchGlass(
                         .regular,
-                        tint: isDropTarget ? Color.accentColor : Color.accentColor.opacity(0.08),
+                        tint: isDropTarget ? OpenMyChrome.ink : OpenMyChrome.raise,
                         in: Circle()
                     )
                 Text(isDropTarget ? "松手存入队列" : "随时可以开始")

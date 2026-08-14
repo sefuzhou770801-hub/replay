@@ -42,8 +42,13 @@ compile_and_run playback_command \
     "$project_dir/tools/playback_command_check.swift"
 
 compile_and_run activation_click \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
     "$project_dir/Sources/Replay/VisualStyle.swift" \
     "$project_dir/tools/activation_click_check.swift"
+
+compile_and_run openmy_chrome \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/tools/openmy_chrome_check.swift"
 
 compile_and_run replay_migration \
     "$project_dir/Sources/Replay/ReplayMigration.swift" \

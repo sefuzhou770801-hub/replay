@@ -40,6 +40,17 @@ struct ActivationClickCheck {
 
         shield.detach()
         precondition(shield.superview == nil)
+
+        precondition(DetailHeaderMetrics.leadingPadding(sidebarCollapsed: true) == 154)
+        precondition(
+            DetailHeaderMetrics.leadingPadding(sidebarCollapsed: false) >= 52,
+            "展开左侧栏后系统侧栏钮仍在标题左缘，14 点会叠字"
+        )
+        precondition(
+            DetailHeaderMetrics.leadingPadding(sidebarCollapsed: true)
+                > DetailHeaderMetrics.leadingPadding(sidebarCollapsed: false)
+        )
+
         print("activation_click_check=passed")
     }
 }

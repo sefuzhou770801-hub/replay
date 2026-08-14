@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mediaKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        OpenMyChrome.applyAppearance()
         SystemMediaController.shared.start()
         mediaKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { event in
             guard let action = HardwareMediaKeyEventPolicy.action(

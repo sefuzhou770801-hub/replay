@@ -1,13 +1,23 @@
 import AppKit
 import SwiftUI
 
+enum DetailHeaderMetrics {
+    static let collapsedLeadingPadding: CGFloat = 154
+    static let expandedLeadingPadding: CGFloat = 56
+
+    /// 收起时要让过红绿灯和系统侧栏钮；展开后红绿灯进左栏，侧栏钮仍停在标题左缘。
+    static func leadingPadding(sidebarCollapsed: Bool) -> CGFloat {
+        sidebarCollapsed ? collapsedLeadingPadding : expandedLeadingPadding
+    }
+}
+
 enum WatchGlassStyle {
     case regular
     case clear
 }
 
 extension View {
-    func watchGlass<S: Shape>(
+    func watchGlass<S: InsettableShape>(
         _ style: WatchGlassStyle = .regular,
         tint: Color? = nil,
         interactive: Bool = false,
@@ -21,7 +31,7 @@ extension View {
     }
 }
 
-private struct WatchGlassModifier<S: Shape>: ViewModifier {
+private struct WatchGlassModifier<S: InsettableShape>: ViewModifier {
     let style: WatchGlassStyle
     let tint: Color?
     let interactive: Bool
@@ -29,31 +39,38 @@ private struct WatchGlassModifier<S: Shape>: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            let glass: Glass = style == .clear ? .clear : .regular
-            content.glassEffect(glass.tint(tint).interactive(interactive), in: shape)
-        } else {
-            content.background(.ultraThinMaterial, in: shape)
-        }
+        let fill = tint ?? (style == .clear ? OpenMyChrome.canvas : OpenMyChrome.raise)
+        content
+            .background(fill, in: shape)
+            .overlay {
+                shape.strokeBorder(OpenMyChrome.hair)
+            }
     }
 }
 
 private struct WatchGlassButtonModifier: ViewModifier {
     let prominent: Bool
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            if prominent {
-                content.buttonStyle(.glassProminent)
-            } else {
-                content.buttonStyle(.glass)
+        content.buttonStyle(OpenMyChromeButtonStyle(prominent: prominent))
+    }
+}
+
+private struct OpenMyChromeButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(prominent ? OpenMyChrome.canvas : OpenMyChrome.ink)
+            .background(
+                prominent ? OpenMyChrome.ink : OpenMyChrome.raise,
+                in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusMd, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: OpenMyChrome.radiusMd, style: .continuous)
+                    .strokeBorder(OpenMyChrome.hair)
             }
-        } else if prominent {
-            content.buttonStyle(.borderedProminent)
-        } else {
-            content.buttonStyle(.bordered)
-        }
+            .opacity(configuration.isPressed ? 0.86 : 1)
     }
 }
 
@@ -66,15 +83,8 @@ struct WatchGlassContainer<Content: View>: View {
         self.content = content()
     }
 
-    @ViewBuilder
     var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) {
-                content
-            }
-        } else {
-            content
-        }
+        content
     }
 }
 
@@ -186,6 +196,7 @@ struct WindowStyleConfigurator: NSViewRepresentable {
         // consume their mouse-down events before Button and Menu receive them.
         // The standard title bar remains available for moving the window.
         window.isMovableByWindowBackground = false
+        OpenMyChrome.applyWindowChrome(window)
         coordinator.centerTrafficLights(in: window)
         coordinator.scheduleSidebarToggleAlignment(in: window)
         coordinator.activationClickShield.attach(to: window)
