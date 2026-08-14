@@ -415,9 +415,7 @@ private struct QueueRow: View, Equatable {
                 title
 
                 HStack(spacing: 5) {
-                    Circle()
-                        .fill(sourceBrandColor(for: item.sourceName))
-                        .frame(width: 6, height: 6)
+                    SourceBrandMark(sourceName: item.sourceName)
                     Text(displaySource)
                     Circle()
                         .fill(Color.secondary.opacity(0.55))
@@ -525,37 +523,8 @@ private struct QueueRow: View, Equatable {
         item.sourceName
     }
 
-    private func sourceBrandColor(for sourceName: String) -> Color {
-        switch sourceName {
-        case "YouTube":
-            return Color(red: 1, green: 0, blue: 0x33 / 255)
-        case "哔哩哔哩":
-            return Color(red: 0, green: 0xA1 / 255, blue: 0xD6 / 255)
-        case "X":
-            return Color.primary
-        case "小红书":
-            return Color(red: 1, green: 0x24 / 255, blue: 0x42 / 255)
-        default:
-            return Color.secondary.opacity(0.7)
-        }
-    }
-
     private var statusText: String {
-        switch item.state {
-        case .queued, .downloading:
-            return item.progressLabel
-        case .ready:
-            return item.resumablePosition > 0
-                ? "续播 \(formatTime(item.resumablePosition))"
-                : "已存到本地"
-        case .failed:
-            return item.progressLabel
-        }
-    }
-
-    private func formatTime(_ seconds: Double) -> String {
-        let total = Int(seconds.rounded())
-        return String(format: "%d:%02d", total / 60, total % 60)
+        QueueRowMeta.statusText(state: item.state, progressLabel: item.progressLabel)
     }
 }
 
@@ -746,6 +715,7 @@ private struct VideoDetail: View {
     @EnvironmentObject private var store: QueueStore
     @AppStorage("subtitlesEnabled") private var subtitlesEnabled = false
     @AppStorage("chaptersPresented") private var chaptersPresented = true
+    @AppStorage("sidePaneMode") private var sidePaneModeRaw = SidePaneMode.chapters.rawValue
     @State private var seekRequest: PlayerSeekRequest?
     @State private var playback = PlaybackSnapshot.empty
     @State private var subtitleTrack: VideoSubtitleTrack?
@@ -768,6 +738,7 @@ private struct VideoDetail: View {
     private var detailBody: some View {
         chapterLayout
             .onAppear {
+                sidePaneModeRaw = SidePaneSelection.openingMode(hasChapters: !item.availableChapters.isEmpty).rawValue
                 preparePlayerAfterSelection()
                 // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
                 store.rescanLocalSubtitle(for: item.id) { path in
@@ -1787,11 +1758,6 @@ private struct PlayerControlButton: View {
     }
 }
 
-private enum SidePaneMode: String {
-    case chapters
-    case lyrics
-}
-
 private struct ChapterSidebar: View {
     let chapters: [VideoChapter]
     let subtitleCues: [VideoSubtitleCue]
@@ -1821,18 +1787,13 @@ private struct ChapterSidebar: View {
         SidePaneMode(rawValue: sidePaneModeRaw) ?? .chapters
     }
 
-    /// 在缺少对应数据时回落到另一可用视图（仅字幕时默认歌词轴）。
+    /// 点了就停在所选页；缺数据也留在该页空态，不回落。
     private var effectiveMode: SidePaneMode {
-        let hasChapters = !chapters.isEmpty
-        let hasLyrics = hasSubtitleSource || !subtitleCues.isEmpty
-        switch preferredMode {
-        case .chapters:
-            if hasChapters { return .chapters }
-            return hasLyrics ? .lyrics : .chapters
-        case .lyrics:
-            if hasLyrics { return .lyrics }
-            return hasChapters ? .chapters : .lyrics
-        }
+        SidePaneSelection.resolvedMode(
+            preferred: preferredMode,
+            hasChapters: !chapters.isEmpty,
+            hasSubtitles: hasSubtitleSource || !subtitleCues.isEmpty
+        )
     }
 
     private var listCount: Int {
@@ -1903,26 +1864,21 @@ private struct ChapterSidebar: View {
     private var modeToggle: some View {
         HStack(spacing: 2) {
             modeButton(
-                title: "章节",
-                mode: .chapters,
-                enabled: !chapters.isEmpty,
-                disabledHelp: "暂无章节"
+                title: SidePaneSelection.visibleTitle(for: .chapters),
+                mode: .chapters
             )
             modeButton(
-                title: "歌词",
-                mode: .lyrics,
-                enabled: hasSubtitleSource || !subtitleCues.isEmpty,
-                disabledHelp: "无字幕"
+                title: SidePaneSelection.visibleTitle(for: .lyrics),
+                mode: .lyrics
             )
         }
         .padding(2)
         .background(Color.primary.opacity(0.06), in: Capsule())
     }
 
-    private func modeButton(title: String, mode: SidePaneMode, enabled: Bool, disabledHelp: String) -> some View {
+    private func modeButton(title: String, mode: SidePaneMode) -> some View {
         let isSelected = effectiveMode == mode
         return Button {
-            guard enabled else { return }
             sidePaneModeRaw = mode.rawValue
         } label: {
             Text(title)
@@ -1939,9 +1895,8 @@ private struct ChapterSidebar: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.45)
-        .help(enabled ? title : disabledHelp)
+        .help(title)
+        .accessibilityLabel(title)
     }
 
     @ViewBuilder
