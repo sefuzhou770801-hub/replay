@@ -473,25 +473,12 @@ final class DownloadEngine {
                 $0.lastPathComponent.hasPrefix(prefix) && supported.contains($0.pathExtension.lowercased())
             }
             .sorted { lhs, rhs in
-                let leftRank = self.subtitleRank(lhs)
-                let rightRank = self.subtitleRank(rhs)
+                let leftRank = SubtitleTrackRank.value(for: lhs)
+                let rightRank = SubtitleTrackRank.value(for: rhs)
                 if leftRank != rightRank { return leftRank < rightRank }
                 return lhs.lastPathComponent.count < rhs.lastPathComponent.count
             }
             .first
-    }
-
-    private func subtitleRank(_ url: URL) -> Int {
-        // 数值越小越优先：中文各变体 > 英文 > 其他
-        let name = url.deletingPathExtension().lastPathComponent.lowercased()
-        if name.hasSuffix(".zh") { return 0 }
-        if name.hasSuffix(".zh-hans") || name.hasSuffix(".zh-cn") { return 1 }
-        if name.hasSuffix(".zh-hant") || name.hasSuffix(".zh-tw") || name.hasSuffix(".zh-hk") { return 2 }
-        if name.range(of: #"\.zh[-_]"#, options: .regularExpression) != nil { return 3 }
-        if name.hasSuffix(".en") { return 10 }
-        if name.hasSuffix(".en-orig") { return 11 }
-        if name.range(of: #"\.en[-_]"#, options: .regularExpression) != nil { return 12 }
-        return 100
     }
 
     private func setProcess(_ process: Process, for itemID: UUID) {
