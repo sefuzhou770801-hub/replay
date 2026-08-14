@@ -114,6 +114,50 @@ struct SubtitleParserCheck {
         precondition(distinctCues[1].text == "Hello")
         precondition(distinctCues[1].startTime == 1.04)
 
+        // YouTube 两行滚动窗：长窗 + 10ms 闪现。拆成一句一行，闪现不占条。
+        let youtubeRoll = """
+        1
+        00:00:00,000 --> 00:00:01,590
+
+        In this video, I'm going to show you how
+
+        2
+        00:00:01,590 --> 00:00:01,600
+        In this video, I'm going to show you how
+         
+
+        3
+        00:00:01,600 --> 00:00:03,669
+        In this video, I'm going to show you how
+        I use Notion to manage every aspect of
+
+        4
+        00:00:03,669 --> 00:00:03,679
+        I use Notion to manage every aspect of
+         
+
+        5
+        00:00:03,679 --> 00:00:05,800
+        I use Notion to manage every aspect of
+        my life. From daily tasks to finances to
+        """
+        let youtubeCues = VideoSubtitleTrack.parse(youtubeRoll)
+        precondition(
+            youtubeCues.count == 3,
+            "expected 3 unrolled lines, got \(youtubeCues.count) \(youtubeCues.map(\.text))"
+        )
+        precondition(youtubeCues.allSatisfy { !$0.text.contains("\n") })
+        precondition(youtubeCues[0].text == "In this video, I'm going to show you how")
+        precondition(youtubeCues[0].startTime == 0)
+        precondition(abs(youtubeCues[0].endTime - 3.679) < 0.0001)
+        precondition(youtubeCues[1].text == "I use Notion to manage every aspect of")
+        precondition(abs(youtubeCues[1].startTime - 1.6) < 0.0001)
+        precondition(youtubeCues[2].text == "my life. From daily tasks to finances to")
+        let youtubeTrack = VideoSubtitleTrack(cues: youtubeCues)
+        let spoken = youtubeTrack.text(at: 2.0)
+        precondition(spoken == "I use Notion to manage every aspect of", "got \(spoken ?? "nil")")
+        precondition(youtubeTrack.text(at: 0.5) == "In this video, I'm going to show you how")
+
         if CommandLine.arguments.count > 1 {
             let downloadedURL = URL(fileURLWithPath: CommandLine.arguments[1])
             guard let downloadedTrack = VideoSubtitleTrack(contentsOf: downloadedURL) else {

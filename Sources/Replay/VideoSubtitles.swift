@@ -22,12 +22,8 @@ struct VideoSubtitleTrack: Equatable, Sendable {
 
     func text(at time: Double) -> String? {
         guard time.isFinite else { return nil }
-        var seen: Set<String> = []
-        let active = cues.compactMap { cue -> String? in
-            guard cue.startTime <= time, time < cue.endTime, seen.insert(cue.text).inserted else { return nil }
-            return cue.text
-        }
-        return active.isEmpty ? nil : active.joined(separator: "\n")
+        let active = cues.filter { $0.startTime <= time && time < $0.endTime }
+        return active.max(by: { $0.startTime < $1.startTime })?.text
     }
 
     /// 短于该时长且紧邻后续更长 cue 的条目视为 YouTube 滚动字幕闪现帧，从列表中折叠。
@@ -36,28 +32,130 @@ struct VideoSubtitleTrack: Equatable, Sendable {
     private static let rollingFlashGapTolerance: Double = 0.05
 
     static func parse(_ source: String) -> [VideoSubtitleCue] {
+        let raw = parseBlocks(source).sorted { lhs, rhs in
+            lhs.startTime == rhs.startTime ? lhs.endTime < rhs.endTime : lhs.startTime < rhs.startTime
+        }
+        return unrollRollingLineCues(collapseRollingFlashCues(raw))
+    }
+
+    /// 按「下一条序号/时间轴」切块，保住时间轴后的空行（两行窗第一行空白）。
+    static func parseBlocks(_ source: String) -> [VideoSubtitleCue] {
         let normalized = source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-            .replacingOccurrences(of: "\n[ \\t]*\n", with: "\n\n", options: .regularExpression)
-
-        let raw = normalized.components(separatedBy: "\n\n").compactMap { block -> VideoSubtitleCue? in
-            let lines = block.components(separatedBy: "\n")
-            guard let timingIndex = lines.firstIndex(where: { $0.contains("-->") }) else { return nil }
-            let timing = lines[timingIndex].components(separatedBy: "-->")
+        let lines = normalized.components(separatedBy: "\n")
+        var cues: [VideoSubtitleCue] = []
+        var index = 0
+        while index < lines.count {
+            while index < lines.count, lines[index].trimmingCharacters(in: .whitespaces).isEmpty {
+                index += 1
+            }
+            guard index < lines.count else { break }
+            if isIndexLine(lines[index]),
+               index + 1 < lines.count,
+               lines[index + 1].contains("-->") {
+                index += 1
+            }
+            guard index < lines.count, lines[index].contains("-->") else {
+                index += 1
+                continue
+            }
+            let timing = lines[index].components(separatedBy: "-->")
+            index += 1
+            var body: [String] = []
+            while index < lines.count, !isCueHeader(lines, at: index) {
+                body.append(lines[index])
+                index += 1
+            }
             guard timing.count == 2,
                   let start = parseTimestamp(timing[0]),
                   let end = parseTimestamp(timing[1]),
-                  end > start else { return nil }
-
-            let caption = cleanCaption(lines.dropFirst(timingIndex + 1).joined(separator: "\n"))
-            guard !caption.isEmpty else { return nil }
-            return VideoSubtitleCue(startTime: start, endTime: end, text: caption)
+                  end > start else { continue }
+            let caption = cleanCaption(body.joined(separator: "\n"))
+            guard !caption.isEmpty else { continue }
+            cues.append(VideoSubtitleCue(startTime: start, endTime: end, text: caption))
         }
-        .sorted { lhs, rhs in
+        return cues
+    }
+
+    private static func isIndexLine(_ line: String) -> Bool {
+        let token = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !token.isEmpty && token.allSatisfy(\.isNumber)
+    }
+
+    private static func isCueHeader(_ lines: [String], at index: Int) -> Bool {
+        var cursor = index
+        while cursor < lines.count, lines[cursor].trimmingCharacters(in: .whitespaces).isEmpty {
+            cursor += 1
+        }
+        guard cursor < lines.count else { return false }
+        if lines[cursor].contains("-->") { return true }
+        return isIndexLine(lines[cursor])
+            && cursor + 1 < lines.count
+            && lines[cursor + 1].contains("-->")
+    }
+
+    /// 相邻两条上一行与下一行正文完全相同，视为两行滚动窗在推进。
+    static func isRollingAdvance(_ previous: VideoSubtitleCue, _ current: VideoSubtitleCue) -> Bool {
+        guard let last = captionLines(previous).last, let first = captionLines(current).first else {
+            return false
+        }
+        return last == first
+    }
+
+    /// 只拆滚动推进的连续段；双语整窗（行与行不完全相同）原样保留。
+    static func unrollRollingLineCues(_ cues: [VideoSubtitleCue]) -> [VideoSubtitleCue] {
+        guard cues.count > 1 else { return cues }
+        var result: [VideoSubtitleCue] = []
+        var runStart = 0
+        while runStart < cues.count {
+            var runEnd = runStart
+            while runEnd + 1 < cues.count, isRollingAdvance(cues[runEnd], cues[runEnd + 1]) {
+                runEnd += 1
+            }
+            if runEnd > runStart {
+                result.append(contentsOf: unrollRun(Array(cues[runStart...runEnd])))
+            } else {
+                result.append(cues[runStart])
+            }
+            runStart = runEnd + 1
+        }
+        return result
+    }
+
+    private static func captionLines(_ cue: VideoSubtitleCue) -> [String] {
+        cue.text
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func unrollRun(_ run: [VideoSubtitleCue]) -> [VideoSubtitleCue] {
+        var firstSeen: [String: Double] = [:]
+        var emitted: [VideoSubtitleCue] = []
+        var previous: [String] = []
+        for cue in run {
+            let current = captionLines(cue)
+            for line in current where firstSeen[line] == nil {
+                firstSeen[line] = cue.startTime
+            }
+            for line in previous where !current.contains(line) {
+                if let start = firstSeen.removeValue(forKey: line), cue.startTime > start {
+                    emitted.append(VideoSubtitleCue(startTime: start, endTime: cue.startTime, text: line))
+                }
+            }
+            previous = current
+        }
+        if let last = run.last {
+            for line in previous {
+                if let start = firstSeen[line], last.endTime > start {
+                    emitted.append(VideoSubtitleCue(startTime: start, endTime: last.endTime, text: line))
+                }
+            }
+        }
+        return emitted.sorted { lhs, rhs in
             lhs.startTime == rhs.startTime ? lhs.endTime < rhs.endTime : lhs.startTime < rhs.startTime
         }
-        return collapseRollingFlashCues(raw)
     }
 
     /// 去掉 YouTube 自动字幕的「10ms 闪现 + 扩展句」成对重复，保留双语两行完整 cue。
