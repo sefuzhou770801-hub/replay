@@ -6,6 +6,8 @@ runtime_tools_dir=$("$project_dir/scripts/prepare_runtime_tools.sh" | tail -1)
 
 REPLAY_UNIVERSAL=1 \
 REPLAY_BUNDLED_TOOLS_DIR="$runtime_tools_dir" \
+REPLAY_INSTALL_APP=0 \
+REPLAY_LAUNCH_APP=0 \
     "$project_dir/scripts/build_app.sh"
 
 archive="$project_dir/dist/Replay-macOS.zip"

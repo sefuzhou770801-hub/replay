@@ -8,6 +8,20 @@ resources_dir="$contents_dir/Resources"
 macos_dir="$contents_dir/MacOS"
 iconset_dir="$project_dir/.build/Replay.iconset"
 bundled_tools_dir="${REPLAY_BUNDLED_TOOLS_DIR:-}"
+install_app="${REPLAY_INSTALL_APP:-1}"
+launch_app="${REPLAY_LAUNCH_APP:-$install_app}"
+installed_app="${REPLAY_INSTALLED_APP_PATH:-/Applications/Replay.app}"
+
+# The macOS 27 Command Line Tools SDK currently omits SwiftUI macro plugins.
+# Prefer the adjacent macOS 26 compatibility SDK only for that toolchain.
+if [[ -z "${SDKROOT:-}" ]]; then
+    default_sdk=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+    default_sdk_version=$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || true)
+    compatibility_sdk="$(dirname "$default_sdk")/MacOSX26.sdk"
+    if [[ "$default_sdk_version" == 27.* && -d "$compatibility_sdk" ]]; then
+        export SDKROOT="$compatibility_sdk"
+    fi
+fi
 
 if [[ "${REPLAY_UNIVERSAL:-0}" == "1" ]]; then
     arm_build="$project_dir/.build/release-arm64"
@@ -57,4 +71,34 @@ if [[ -n "$bundled_tools_dir" ]]; then
 fi
 
 codesign --force --deep --sign - "$app_dir"
+
+launch_target="$app_dir"
+if [[ "$install_app" == "1" ]]; then
+    if pgrep -x Replay >/dev/null 2>&1; then
+        pkill -TERM -x Replay >/dev/null 2>&1 || true
+        for _ in {1..50}; do
+            if ! pgrep -x Replay >/dev/null 2>&1; then
+                break
+            fi
+            sleep 0.1
+        done
+        if pgrep -x Replay >/dev/null 2>&1; then
+            printf 'Replay did not quit; installation stopped.\n' >&2
+            exit 1
+        fi
+    fi
+
+    installing_app="$installed_app.installing"
+    rm -rf "$installing_app"
+    ditto "$app_dir" "$installing_app"
+    codesign --verify --deep --strict "$installing_app"
+    rm -rf "$installed_app"
+    mv "$installing_app" "$installed_app"
+    launch_target="$installed_app"
+fi
+
+if [[ "$launch_app" == "1" ]]; then
+    open "$launch_target"
+fi
+
 printf '%s\n' "$app_dir"

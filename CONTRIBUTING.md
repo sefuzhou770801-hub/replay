@@ -19,6 +19,8 @@ Development builds use `yt-dlp`, `ffmpeg`, and optionally `deno` from the app bu
 brew install yt-dlp ffmpeg deno
 ```
 
+`build_app.sh` installs the finished app at `/Applications/Replay.app` and launches it by default. Use `REPLAY_INSTALL_APP=0` for a build-only run or `REPLAY_LAUNCH_APP=0` to install without launching.
+
 ## Pull requests
 
 - Keep changes focused and explain the user-visible behavior.

@@ -91,7 +91,7 @@ cd replay
 ./scripts/test.sh
 ```
 
-The development build is written to `dist/Replay.app`. It uses bundled runtime tools when supplied by the release packager, then falls back to Homebrew paths for local development:
+The development build is written to `dist/Replay.app`, installed at `/Applications/Replay.app`, and launched automatically. Set `REPLAY_INSTALL_APP=0` to keep the build local, or `REPLAY_LAUNCH_APP=0` to install without launching. It uses bundled runtime tools when supplied by the release packager, then falls back to Homebrew paths for local development:
 
 ```sh
 brew install yt-dlp ffmpeg deno
