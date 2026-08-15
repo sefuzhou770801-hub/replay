@@ -17,6 +17,20 @@ struct VideoSubtitleCueID: Hashable, Sendable {
     let text: String
 }
 
+struct VideoSubtitlePresentation: Equatable, Identifiable, Sendable {
+    let id: VideoSubtitleCueID
+    let text: String
+
+    static func resolve(
+        track: VideoSubtitleTrack?,
+        isEnabled: Bool,
+        at time: Double
+    ) -> VideoSubtitlePresentation? {
+        guard isEnabled, let cue = track?.cue(at: time) else { return nil }
+        return VideoSubtitlePresentation(id: cue.id, text: cue.text)
+    }
+}
+
 struct VideoSubtitleTrack: Equatable, Sendable {
     let cues: [VideoSubtitleCue]
 

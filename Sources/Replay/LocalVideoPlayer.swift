@@ -2,22 +2,203 @@ import AVKit
 import MediaPlayer
 import SwiftUI
 
-private final class FloatingVideoPlayerView: AVPlayerView {
+private final class PlayerSubtitleOverlayView: NSView {
+    private let sourceTextField = NSTextField(labelWithString: "")
+    private let translationTextField = NSTextField(labelWithString: "")
+    private let textStack = NSStackView()
+    private(set) var presentation: VideoSubtitlePresentation?
+    private var animationGeneration = 0
+    private var baseFontSize: CGFloat = 24
+
+    var displayedText: String? { presentation?.text }
+    var displayedLines: [String] {
+        [sourceTextField, translationTextField]
+            .filter { !$0.isHidden && !$0.stringValue.isEmpty }
+            .map(\.stringValue)
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    func updateForSurfaceWidth(_ width: CGFloat) {
+        baseFontSize = width < 600 ? 16 : 24
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let availableWidth = max(1, bounds.width - 28)
+        updateFont(for: sourceTextField, availableWidth: availableWidth)
+        updateFont(for: translationTextField, availableWidth: availableWidth)
+    }
+
+    func setPresentation(_ presentation: VideoSubtitlePresentation?, animated: Bool) {
+        guard self.presentation != presentation else { return }
+        self.presentation = presentation
+        animationGeneration &+= 1
+        let generation = animationGeneration
+        let shouldAnimate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        if let presentation {
+            let lines = presentation.text
+                .split(whereSeparator: \Character.isNewline)
+                .map(String.init)
+            sourceTextField.stringValue = lines.first ?? presentation.text
+            translationTextField.stringValue = lines.dropFirst().joined(separator: " ")
+            translationTextField.isHidden = translationTextField.stringValue.isEmpty
+            isHidden = false
+            needsLayout = true
+            if shouldAnimate {
+                alphaValue = 0
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.18
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    animator().alphaValue = 1
+                }
+            } else {
+                alphaValue = 1
+            }
+            return
+        }
+
+        guard shouldAnimate, !isHidden else {
+            alphaValue = 0
+            isHidden = true
+            clearText()
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self,
+                  self.animationGeneration == generation,
+                  self.presentation == nil else { return }
+            self.isHidden = true
+            self.clearText()
+        })
+    }
+
+    private func configure() {
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.78).cgColor
+        layer?.cornerRadius = 10
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.5
+        layer?.shadowRadius = 8
+        layer?.shadowOffset = NSSize(width: 0, height: -3)
+        alphaValue = 0
+        isHidden = true
+
+        for textField in [sourceTextField, translationTextField] {
+            textField.textColor = .white
+            textField.alignment = .center
+            textField.maximumNumberOfLines = 1
+            textField.lineBreakMode = .byTruncatingTail
+            textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.orientation = .vertical
+        textStack.alignment = .centerX
+        textStack.spacing = 3
+        textStack.addArrangedSubview(sourceTextField)
+        textStack.addArrangedSubview(translationTextField)
+        addSubview(textStack)
+        NSLayoutConstraint.activate([
+            textStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
+            sourceTextField.widthAnchor.constraint(equalTo: textStack.widthAnchor),
+            translationTextField.widthAnchor.constraint(equalTo: textStack.widthAnchor)
+        ])
+        updateForSurfaceWidth(800)
+    }
+
+    private func updateFont(for textField: NSTextField, availableWidth: CGFloat) {
+        guard !textField.stringValue.isEmpty else { return }
+        let baseFont = roundedFont(size: baseFontSize)
+        let measuredWidth = (textField.stringValue as NSString).size(
+            withAttributes: [.font: baseFont]
+        ).width
+        let minimumSize: CGFloat = baseFontSize == 16 ? 11 : 12
+        let fittedSize = measuredWidth > availableWidth
+            ? max(minimumSize, floor(baseFontSize * availableWidth / measuredWidth))
+            : baseFontSize
+        if textField.font?.pointSize != fittedSize {
+            textField.font = roundedFont(size: fittedSize)
+        }
+    }
+
+    private func roundedFont(size: CGFloat) -> NSFont {
+        let baseFont = NSFont.systemFont(ofSize: size, weight: .semibold)
+        let descriptor = baseFont.fontDescriptor.withDesign(.rounded)
+        return descriptor.flatMap { NSFont(descriptor: $0, size: size) } ?? baseFont
+    }
+
+    private func clearText() {
+        sourceTextField.stringValue = ""
+        translationTextField.stringValue = ""
+        translationTextField.isHidden = true
+    }
+}
+
+private func installSubtitleOverlay(_ overlay: PlayerSubtitleOverlayView, in view: NSView) {
+    view.addSubview(overlay, positioned: .above, relativeTo: nil)
+    NSLayoutConstraint.activate([
+        overlay.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+        overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
+        overlay.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
+        overlay.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -16),
+        overlay.widthAnchor.constraint(lessThanOrEqualToConstant: 900)
+    ])
+}
+
+final class FloatingVideoPlayerView: AVPlayerView {
     var onVolumeScroll: ((Double) -> Void)?
     var onHoverChanged: ((Bool) -> Void)?
     var onReturnToMainWindow: (() -> Void)?
     private let volumeScrollInterpreter = PlayerVolumeScrollInterpreter()
     private let returnButton = NSButton()
+    private let subtitleOverlay = PlayerSubtitleOverlayView()
     private var hoverTrackingArea: NSTrackingArea?
+
+    var displayedSubtitleText: String? { subtitleOverlay.displayedText }
+    var displayedSubtitleLines: [String] { subtitleOverlay.displayedLines }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        installSubtitleOverlay(subtitleOverlay, in: self)
         configureReturnButton()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        installSubtitleOverlay(subtitleOverlay, in: self)
         configureReturnButton()
+    }
+
+    override func layout() {
+        super.layout()
+        subtitleOverlay.updateForSurfaceWidth(bounds.width)
+    }
+
+    func setSubtitlePresentation(_ presentation: VideoSubtitlePresentation?, animated: Bool) {
+        subtitleOverlay.setPresentation(presentation, animated: animated)
     }
 
     override func updateTrackingAreas() {
@@ -94,6 +275,10 @@ final class PictureInPicturePlayerView: NSView {
     var onVolumeScroll: ((Double) -> Void)?
     private var scrollEventMonitor: Any?
     private let volumeScrollInterpreter = PlayerVolumeScrollInterpreter()
+    private let subtitleOverlay = PlayerSubtitleOverlayView()
+
+    var displayedSubtitleText: String? { subtitleOverlay.displayedText }
+    var displayedSubtitleLines: [String] { subtitleOverlay.displayedLines }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -116,12 +301,18 @@ final class PictureInPicturePlayerView: NSView {
             "position": NSNull(),
             "frame": NSNull()
         ]
+        installSubtitleOverlay(subtitleOverlay, in: self)
         updatePlayerLayerFrame()
     }
 
     override func layout() {
         super.layout()
         updatePlayerLayerFrame()
+        subtitleOverlay.updateForSurfaceWidth(bounds.width)
+    }
+
+    func setSubtitlePresentation(_ presentation: VideoSubtitlePresentation?, animated: Bool) {
+        subtitleOverlay.setPresentation(presentation, animated: animated)
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -563,13 +754,13 @@ enum PlaybackVolumePreference {
 
 enum PictureInPicturePolicy {
     static func shouldStart(
-        isAppActive: Bool,
+        isPrimarySurfaceVisible: Bool,
         isPlaying: Bool,
         reachedEnd: Bool,
         isAlreadyActive: Bool,
         isExternalPlaybackActive: Bool
     ) -> Bool {
-        !isAppActive
+        !isPrimarySurfaceVisible
             && isPlaying
             && !reachedEnd
             && !isAlreadyActive
@@ -739,6 +930,8 @@ struct LocalVideoPlayer: NSViewRepresentable {
     let author: String
     let resumeAt: Double
     let seekRequest: PlayerSeekRequest?
+    let subtitleTrack: VideoSubtitleTrack?
+    let subtitlesEnabled: Bool
     let onProgress: (Double) -> Void
     let onStateChange: (PlaybackSnapshot) -> Void
     let onVolumeChange: (Double) -> Void
@@ -765,6 +958,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
         )
         view.addGestureRecognizer(click)
         context.coordinator.load(url: url, title: title, author: author, resumeAt: resumeAt, into: view)
+        context.coordinator.updateSubtitles(track: subtitleTrack, isEnabled: subtitlesEnabled)
         return view
     }
 
@@ -782,9 +976,11 @@ struct LocalVideoPlayer: NSViewRepresentable {
     func updateNSView(_ view: PictureInPicturePlayerView, context: Context) {
         if context.coordinator.currentURL != url {
             context.coordinator.load(url: url, title: title, author: author, resumeAt: resumeAt, into: view)
+            context.coordinator.updateSubtitles(track: subtitleTrack, isEnabled: subtitlesEnabled)
             return
         }
         context.coordinator.updateMetadata(title: title, author: author)
+        context.coordinator.updateSubtitles(track: subtitleTrack, isEnabled: subtitlesEnabled)
         if let seekRequest {
             context.coordinator.seek(to: seekRequest)
         }
@@ -823,6 +1019,8 @@ struct LocalVideoPlayer: NSViewRepresentable {
         private var preferredRate: Double = 1
         private var currentTitle = ""
         private var currentAuthor = ""
+        private var subtitleTrack: VideoSubtitleTrack?
+        private var subtitlesEnabled = false
         fileprivate var currentURL: URL?
 
         init(
@@ -898,8 +1096,9 @@ struct LocalVideoPlayer: NSViewRepresentable {
             stateObserver = player.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
                 queue: .main
-            ) { [weak self] _ in
+            ) { [weak self] time in
                 self?.publishSnapshot()
+                self?.publishSubtitle(at: time.seconds, animated: true)
             }
             endObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemDidPlayToEndTime,
@@ -927,6 +1126,13 @@ struct LocalVideoPlayer: NSViewRepresentable {
             if PlaybackCommandCenter.shared.isActive(commandToken) {
                 SystemMediaController.shared.setItem(title: title, author: author)
             }
+        }
+
+        func updateSubtitles(track: VideoSubtitleTrack?, isEnabled: Bool) {
+            subtitleTrack = track
+            subtitlesEnabled = isEnabled
+            let currentTime = player?.currentTime().seconds ?? 0
+            publishSubtitle(at: currentTime.isFinite ? currentTime : 0, animated: false)
         }
 
         func seek(to request: PlayerSeekRequest) {
@@ -1080,6 +1286,10 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 target: self,
                 action: #selector(handleVideoClick(_:))
             ))
+            fullscreenView.setSubtitlePresentation(
+                currentSubtitlePresentation(),
+                animated: false
+            )
 
             playerView?.playerLayer.player = nil
             fullscreenView.playerLayer.player = player
@@ -1169,8 +1379,34 @@ struct LocalVideoPlayer: NSViewRepresentable {
                     object: NSApp,
                     queue: .main
                 ) { [weak self] _ in
+                    guard self?.playerView?.window?.isMiniaturized != true else {
+                        self?.showBackgroundPlayerIfAppropriate()
+                        return
+                    }
                     self?.backgroundOverlayDismissed = false
                     self?.hideBackgroundPlayer(animated: true, restoreInline: true)
+                },
+                NotificationCenter.default.addObserver(
+                    forName: NSWindow.didMiniaturizeNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] notification in
+                    guard let self,
+                          notification.object as? NSWindow === self.playerView?.window else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        self.showBackgroundPlayerIfAppropriate()
+                    }
+                },
+                NotificationCenter.default.addObserver(
+                    forName: NSWindow.didDeminiaturizeNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] notification in
+                    guard let self,
+                          notification.object as? NSWindow === self.playerView?.window,
+                          NSApp.isActive else { return }
+                    self.backgroundOverlayDismissed = false
+                    self.hideBackgroundPlayer(animated: true, restoreInline: true)
                 }
             ]
         }
@@ -1188,7 +1424,8 @@ struct LocalVideoPlayer: NSViewRepresentable {
             guard let player,
                   !backgroundOverlayDismissed,
                   PictureInPicturePolicy.shouldStart(
-                    isAppActive: NSApp.isActive,
+                    isPrimarySurfaceVisible: NSApp.isActive
+                        && playerView?.window?.isMiniaturized != true,
                     isPlaying: player.timeControlStatus != .paused,
                     reachedEnd: reachedEnd,
                     isAlreadyActive: backgroundPanel != nil,
@@ -1206,6 +1443,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
             floatingView.wantsLayer = true
             floatingView.layer?.cornerRadius = 16
             floatingView.layer?.masksToBounds = true
+            floatingView.setAccessibilityLabel("悬浮播放器")
 
             let panel = NSPanel(
                 contentRect: NSRect(origin: .zero, size: FloatingPlayerLayout.size),
@@ -1214,6 +1452,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 defer: false
             )
             panel.delegate = self
+            panel.title = "悬浮播放器"
             panel.titleVisibility = .hidden
             panel.titlebarAppearsTransparent = true
             panel.standardWindowButton(.closeButton)?.isHidden = true
@@ -1240,6 +1479,10 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 guard let self, let panel else { return }
                 self.returnToMainWindow(from: panel)
             }
+            floatingView.setSubtitlePresentation(
+                currentSubtitlePresentation(),
+                animated: false
+            )
 
             let visibleFrame = playerView?.window?.screen?.visibleFrame
                 ?? NSScreen.main?.visibleFrame
@@ -1373,6 +1616,27 @@ struct LocalVideoPlayer: NSViewRepresentable {
             }
         }
 
+        private func currentSubtitlePresentation() -> VideoSubtitlePresentation? {
+            let rawCurrent = player?.currentTime().seconds ?? .nan
+            let current = rawCurrent.isFinite ? max(0, rawCurrent) : 0
+            return VideoSubtitlePresentation.resolve(
+                track: subtitleTrack,
+                isEnabled: subtitlesEnabled,
+                at: current
+            )
+        }
+
+        private func publishSubtitle(at time: Double, animated: Bool) {
+            let presentation = VideoSubtitlePresentation.resolve(
+                track: subtitleTrack,
+                isEnabled: subtitlesEnabled,
+                at: time
+            )
+            playerView?.setSubtitlePresentation(presentation, animated: animated)
+            fullscreenPlayerView?.setSubtitlePresentation(presentation, animated: animated)
+            backgroundPlayerView?.setSubtitlePresentation(presentation, animated: animated)
+        }
+
         func stop() {
             _ = exitFullscreen()
             hideBackgroundPlayer(animated: false, restoreInline: false)
@@ -1420,12 +1684,15 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 PlaybackCommandCenter.shared.unregister(commandToken)
             }
             commandToken = nil
+            playerView?.setSubtitlePresentation(nil, animated: false)
             playerView?.playerLayer.player = nil
             playerView?.onVolumeScroll = nil
             playerView = nil
             currentURL = nil
             currentTitle = ""
             currentAuthor = ""
+            subtitleTrack = nil
+            subtitlesEnabled = false
         }
 
         deinit {

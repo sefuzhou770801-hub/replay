@@ -981,6 +981,8 @@ private struct VideoDetail: View {
                                 author: item.author,
                                 resumeAt: item.resumablePosition,
                                 seekRequest: seekRequest,
+                                subtitleTrack: subtitleTrack,
+                                subtitlesEnabled: subtitlesEnabled,
                                 onProgress: { store.updatePlaybackPosition($0, for: item.id) },
                                 onStateChange: { playback = $0 },
                                 onVolumeChange: showVolumeHUD,
@@ -996,8 +998,6 @@ private struct VideoDetail: View {
                     downloadState
                 }
             }
-
-            subtitleOverlay
 
             if volumeHUDVisible {
                 PlayerVolumeHUD(
@@ -1016,43 +1016,6 @@ private struct VideoDetail: View {
             RoundedRectangle(cornerRadius: OpenMyChrome.radiusXl, style: .continuous)
                 .strokeBorder(OpenMyChrome.hair)
         }
-    }
-
-    private var displayedSubtitleCue: VideoSubtitleCue? {
-        guard subtitlesEnabled else { return nil }
-        return subtitleTrack?.cue(at: playback.currentTime)
-    }
-
-    private var subtitleOverlay: some View {
-        ZStack {
-            if let cue = displayedSubtitleCue {
-                // 双语恒为两行：原文一行 + 中文一行；长句靠缩小字号，不换行成三四行。
-                Text(cue.text)
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.5)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(0.5), radius: 10, y: 3)
-                    .frame(maxWidth: 900)
-                    .padding(.horizontal, 48)
-                    .padding(.bottom, 26)
-                    .allowsHitTesting(false)
-                    .id(cue.id)
-                    .transition(.opacity)
-            }
-        }
-        .animation(subtitlePlaybackAnimation, value: displayedSubtitleCue?.id)
-    }
-
-    private var subtitlePlaybackAnimation: Animation? {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            ? nil
-            : .easeOut(duration: 0.18)
     }
 
     private func preparePlayerAfterSelection() {

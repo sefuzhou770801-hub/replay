@@ -16,6 +16,43 @@ struct PlaybackCommandCheck {
         precondition(resizingPlayerView.playerLayer.actions?["bounds"] is NSNull)
         precondition(resizingPlayerView.playerLayer.actions?["position"] is NSNull)
 
+        let subtitleTrack = VideoSubtitleTrack(cues: [
+            VideoSubtitleCue(startTime: 0, endTime: 2, text: "Original line\n中文字幕"),
+            VideoSubtitleCue(startTime: 2, endTime: 4, text: "Next line\n下一句")
+        ])
+        let firstSubtitle = VideoSubtitlePresentation.resolve(
+            track: subtitleTrack,
+            isEnabled: true,
+            at: 1
+        )
+        let secondSubtitle = VideoSubtitlePresentation.resolve(
+            track: subtitleTrack,
+            isEnabled: true,
+            at: 3
+        )
+        precondition(firstSubtitle?.text == "Original line\n中文字幕")
+        precondition(firstSubtitle?.id != secondSubtitle?.id)
+        precondition(VideoSubtitlePresentation.resolve(track: subtitleTrack, isEnabled: false, at: 1) == nil)
+
+        resizingPlayerView.setSubtitlePresentation(firstSubtitle, animated: false)
+        precondition(resizingPlayerView.displayedSubtitleText == "Original line\n中文字幕")
+        precondition(resizingPlayerView.displayedSubtitleLines == ["Original line", "中文字幕"])
+
+        let floatingPlayerView = FloatingVideoPlayerView(frame: NSRect(x: 0, y: 0, width: 420, height: 236.25))
+        floatingPlayerView.setSubtitlePresentation(firstSubtitle, animated: false)
+        precondition(
+            floatingPlayerView.displayedSubtitleText == resizingPlayerView.displayedSubtitleText,
+            "主播放器与右下角悬浮窗口必须使用同一字幕视图"
+        )
+        precondition(
+            floatingPlayerView.displayedSubtitleLines == ["Original line", "中文字幕"],
+            "原文和中文字幕必须各占一行"
+        )
+        floatingPlayerView.setSubtitlePresentation(secondSubtitle, animated: false)
+        precondition(floatingPlayerView.displayedSubtitleText == "Next line\n下一句")
+        floatingPlayerView.setSubtitlePresentation(nil, animated: false)
+        precondition(floatingPlayerView.displayedSubtitleText == nil)
+
         precondition(PlaybackRatePolicy.adjusted(1, by: -0.1) == 1)
         precondition(PlaybackRatePolicy.adjusted(1, by: 0.1) == 1.1)
         precondition(PlaybackRatePolicy.adjusted(2.4, by: 0.1) == 2.5)
@@ -85,7 +122,7 @@ struct PlaybackCommandCheck {
             momentumPhase: []
         ))
         precondition(PictureInPicturePolicy.shouldStart(
-            isAppActive: false,
+            isPrimarySurfaceVisible: false,
             isPlaying: true,
             reachedEnd: false,
             isAlreadyActive: false,
@@ -110,35 +147,35 @@ struct PlaybackCommandCheck {
         precondition(HardwareMediaKeyEventPolicy.action(subtype: 8, data1: mediaKeyRepeat) == nil)
         precondition(HardwareMediaKeyEventPolicy.action(subtype: 0, data1: mediaKeyDown) == nil)
         precondition(!PictureInPicturePolicy.shouldStart(
-            isAppActive: true,
+            isPrimarySurfaceVisible: true,
             isPlaying: true,
             reachedEnd: false,
             isAlreadyActive: false,
             isExternalPlaybackActive: false
         ))
         precondition(!PictureInPicturePolicy.shouldStart(
-            isAppActive: false,
+            isPrimarySurfaceVisible: false,
             isPlaying: false,
             reachedEnd: false,
             isAlreadyActive: false,
             isExternalPlaybackActive: false
         ))
         precondition(!PictureInPicturePolicy.shouldStart(
-            isAppActive: false,
+            isPrimarySurfaceVisible: false,
             isPlaying: true,
             reachedEnd: true,
             isAlreadyActive: false,
             isExternalPlaybackActive: false
         ))
         precondition(!PictureInPicturePolicy.shouldStart(
-            isAppActive: false,
+            isPrimarySurfaceVisible: false,
             isPlaying: true,
             reachedEnd: false,
             isAlreadyActive: true,
             isExternalPlaybackActive: false
         ))
         precondition(!PictureInPicturePolicy.shouldStart(
-            isAppActive: false,
+            isPrimarySurfaceVisible: false,
             isPlaying: true,
             reachedEnd: false,
             isAlreadyActive: false,

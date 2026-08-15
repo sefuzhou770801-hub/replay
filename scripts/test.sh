@@ -38,6 +38,7 @@ compile_and_run power_mode \
     "$project_dir/tools/power_mode_check.swift"
 
 compile_and_run playback_command \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/LocalVideoPlayer.swift" \
     "$project_dir/tools/playback_command_check.swift"
 
