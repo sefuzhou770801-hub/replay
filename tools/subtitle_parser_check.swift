@@ -21,6 +21,8 @@ struct SubtitleParserCheck {
         precondition(srtTrack.text(at: 0.5) == nil)
         precondition(srtTrack.text(at: 2) == "Hello offline world & friends.")
         precondition(srtTrack.text(at: 4) == "Second line\ncontinues here.")
+        precondition(srtTrack.cue(at: 2)?.text == "Hello offline world & friends.")
+        precondition(srtTrack.cue(at: 0.5) == nil)
 
         let vtt = """
         WEBVTT
@@ -157,6 +159,26 @@ struct SubtitleParserCheck {
         let spoken = youtubeTrack.text(at: 2.0)
         precondition(spoken == "I use Notion to manage every aspect of", "got \(spoken ?? "nil")")
         precondition(youtubeTrack.text(at: 0.5) == "In this video, I'm going to show you how")
+
+        // 连续、重叠的双语 cue 全程都有文字。播放器仍须用 cue 身份识别换句，
+        // 否则 SwiftUI 只会原位替换 Text 内容，不会执行字幕转场。
+        let bilingualTrack = VideoSubtitleTrack(cues: [
+            VideoSubtitleCue(startTime: 0, endTime: 3.6, text: "First line\n第一行"),
+            VideoSubtitleCue(startTime: 1.6, endTime: 5.2, text: "Second line\n第二行")
+        ])
+        let firstPresentationCue = bilingualTrack.cue(at: 1.0)
+        let secondPresentationCue = bilingualTrack.cue(at: 2.0)
+        precondition(firstPresentationCue?.text == "First line\n第一行")
+        precondition(secondPresentationCue?.text == "Second line\n第二行")
+        precondition(
+            firstPresentationCue?.id != secondPresentationCue?.id,
+            "连续双语字幕换句时必须更换视图身份，才能触发统一转场"
+        )
+        let repeatedTextCue = VideoSubtitleCue(startTime: 6, endTime: 8, text: "First line\n第一行")
+        precondition(
+            firstPresentationCue?.id != repeatedTextCue.id,
+            "文字相同但时间段不同的 cue 也必须有不同身份"
+        )
 
         if CommandLine.arguments.count > 1 {
             let downloadedURL = URL(fileURLWithPath: CommandLine.arguments[1])

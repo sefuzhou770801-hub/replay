@@ -1,6 +1,17 @@
 import Foundation
 
-struct VideoSubtitleCue: Equatable, Sendable {
+struct VideoSubtitleCue: Equatable, Identifiable, Sendable {
+    let startTime: Double
+    let endTime: Double
+    let text: String
+
+    /// 播放器用 cue 身份区分连续字幕。仅比较文字会把相同文本的不同时间段误认为同一条。
+    var id: VideoSubtitleCueID {
+        VideoSubtitleCueID(startTime: startTime, endTime: endTime, text: text)
+    }
+}
+
+struct VideoSubtitleCueID: Hashable, Sendable {
     let startTime: Double
     let endTime: Double
     let text: String
@@ -20,10 +31,14 @@ struct VideoSubtitleTrack: Equatable, Sendable {
         cues = parsed
     }
 
-    func text(at time: Double) -> String? {
+    func cue(at time: Double) -> VideoSubtitleCue? {
         guard time.isFinite else { return nil }
         let active = cues.filter { $0.startTime <= time && time < $0.endTime }
-        return active.max(by: { $0.startTime < $1.startTime })?.text
+        return active.max(by: { $0.startTime < $1.startTime })
+    }
+
+    func text(at time: Double) -> String? {
+        cue(at: time)?.text
     }
 
     /// 短于该时长且紧邻后续更长 cue 的条目视为 YouTube 滚动字幕闪现帧，从列表中折叠。

@@ -15,6 +15,9 @@ enum OpenMyChrome {
     static let successHex: UInt32 = 0x41B98C
     static let warningHex: UInt32 = 0xD9A44C
     static let recHex: UInt32 = 0xE0607E
+    static let rowHoverHex: UInt32 = 0x181818
+    static let rowSelectedHex: UInt32 = 0x2A2A2A
+    static let rowPressedHex: UInt32 = 0x333333
 
     static let canvas = Color(hex: canvasHex)
     static let raise = Color(hex: raiseHex)
@@ -33,6 +36,25 @@ enum OpenMyChrome {
     static let radiusMd: CGFloat = 10
     static let radiusLg: CGFloat = 12
     static let radiusXl: CGFloat = 16
+
+    static let rowHover = Color(hex: rowHoverHex)
+    static let rowSelected = Color(hex: rowSelectedHex)
+    static let rowPressed = Color(hex: rowPressedHex)
+
+    /// 按下 > 选中 > 悬停 > 无底。选中必须比 raise 更亮，否则叠在画布上看不出点中。
+    static func rowSurfaceHex(selected: Bool, pressed: Bool, hovering: Bool) -> UInt32? {
+        if pressed { return rowPressedHex }
+        if selected { return rowSelectedHex }
+        if hovering { return rowHoverHex }
+        return nil
+    }
+
+    static func rowFill(selected: Bool, pressed: Bool, hovering: Bool) -> Color? {
+        guard let hex = rowSurfaceHex(selected: selected, pressed: pressed, hovering: hovering) else {
+            return nil
+        }
+        return Color(hex: hex)
+    }
 
     static func applyAppearance() {
         NSApp.appearance = NSAppearance(named: .darkAqua)

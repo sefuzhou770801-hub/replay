@@ -17,6 +17,17 @@ struct OpenMyChromeCheck {
         precondition(OpenMyChrome.radiusMd == 10)
         precondition(OpenMyChrome.radiusLg == 12)
         precondition(OpenMyChrome.radiusXl == 16)
+
+        precondition(OpenMyChrome.rowSurfaceHex(selected: false, pressed: false, hovering: false) == nil)
+        precondition(OpenMyChrome.rowSurfaceHex(selected: false, pressed: false, hovering: true) == OpenMyChrome.rowHoverHex)
+        precondition(OpenMyChrome.rowSurfaceHex(selected: true, pressed: false, hovering: false) == OpenMyChrome.rowSelectedHex)
+        precondition(OpenMyChrome.rowSurfaceHex(selected: true, pressed: true, hovering: true) == OpenMyChrome.rowPressedHex)
+        precondition(
+            OpenMyChrome.rowSelectedHex > OpenMyChrome.raiseHex,
+            "选中必须比旧 raise 更亮，否则 #1E1E1E 叠在 #0D0D0D 上看不出点中"
+        )
+        precondition(OpenMyChrome.rowPressedHex > OpenMyChrome.rowSelectedHex)
+
         print("openmy_chrome_check=passed")
     }
 }

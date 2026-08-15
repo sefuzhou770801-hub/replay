@@ -160,8 +160,11 @@ struct ContentView: View {
                                         }
                                     }
                                     .simultaneousGesture(
-                                        DragGesture(minimumDistance: 4, coordinateSpace: .named("queue-list"))
-                                            .onChanged { updateQueueDrag(item.id, at: $0.location) }
+                                        DragGesture(
+                                            minimumDistance: QueueRowMeta.reorderDragThreshold,
+                                            coordinateSpace: .named("queue-list")
+                                        )
+                                        .onChanged { updateQueueDrag(item.id, at: $0.location) }
                                     )
                             }
                         }
@@ -216,7 +219,11 @@ struct ContentView: View {
         QueueRow(
             item: item,
             isSelected: store.selection == item.id,
-            select: { store.selection = item.id },
+            select: {
+                store.selection = item.id
+                detailSelection = item.id
+                store.rescanLocalSubtitle(for: item.id)
+            },
             rename: { store.rename(item.id, to: $0) }
         )
         .equatable()
@@ -390,6 +397,7 @@ private struct QueueRow: View, Equatable {
     let rename: (String) -> Void
     @State private var isEditingTitle = false
     @State private var draftTitle = ""
+    @State private var isHovering = false
     @FocusState private var isTitleFocused: Bool
 
     static func == (lhs: QueueRow, rhs: QueueRow) -> Bool {
@@ -397,6 +405,34 @@ private struct QueueRow: View, Equatable {
     }
 
     var body: some View {
+        Group {
+            if isEditingTitle {
+                rowContent
+                    .background {
+                        rowChrome(pressed: false)
+                    }
+            } else {
+                Button(action: handleRowAction) {
+                    rowContent
+                }
+                .buttonStyle(QueueRowButtonStyle(isSelected: isSelected, isHovering: isHovering))
+            }
+        }
+        .onHover { isHovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(.default, select)
+    }
+
+    private func handleRowAction() {
+        if isSelected, NSApp.currentEvent?.clickCount == 2 {
+            beginEditing()
+            return
+        }
+        select()
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 11) {
             QueueThumbnail(item: item, icon: icon, isSelected: isSelected)
 
@@ -428,21 +464,19 @@ private struct QueueRow: View, Equatable {
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
-                    .fill(OpenMyChrome.raise)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
-                            .strokeBorder(OpenMyChrome.hair)
-                    }
-            }
-        }
         .contentShape(RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous))
-        .onTapGesture(perform: select)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction(.default, select)
+    }
+
+    @ViewBuilder
+    private func rowChrome(pressed: Bool) -> some View {
+        if let fill = OpenMyChrome.rowFill(selected: isSelected, pressed: pressed, hovering: isHovering) {
+            RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                .fill(fill)
+                .overlay {
+                    RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                        .strokeBorder(OpenMyChrome.hair)
+                }
+        }
     }
 
     @ViewBuilder
@@ -472,14 +506,11 @@ private struct QueueRow: View, Equatable {
                 .foregroundStyle(OpenMyChrome.ink)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2, perform: beginEditing)
-                .help("双击可重命名")
+                .help("双击已选中的条目可重命名")
         }
     }
 
     private func beginEditing() {
-        select()
         draftTitle = item.title
         isEditingTitle = true
         DispatchQueue.main.async {
@@ -514,6 +545,29 @@ private struct QueueRow: View, Equatable {
 
     private var statusText: String {
         QueueRowMeta.statusText(state: item.state, progressLabel: item.progressLabel)
+    }
+}
+
+private struct QueueRowButtonStyle: ButtonStyle {
+    let isSelected: Bool
+    let isHovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background {
+                if let fill = OpenMyChrome.rowFill(
+                    selected: isSelected,
+                    pressed: configuration.isPressed,
+                    hovering: isHovering
+                ) {
+                    RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                        .fill(fill)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
+                                .strokeBorder(OpenMyChrome.hair)
+                        }
+                }
+            }
     }
 }
 
@@ -735,6 +789,11 @@ private struct VideoDetail: View {
                 }
                 collapseSidebarForNarrowChapterLayoutIfNeeded()
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                store.rescanLocalSubtitle(for: item.id) { path in
+                    loadSubtitles(path: path)
+                }
+            }
             .onDisappear {
                 playerPreparationTask?.cancel()
                 subtitleLoadTask?.cancel()
@@ -938,25 +997,7 @@ private struct VideoDetail: View {
                 }
             }
 
-            if subtitlesEnabled, let caption = subtitleTrack?.text(at: playback.currentTime) {
-                // 双语恒为两行：原文一行 + 中文一行；长句靠缩小字号，不换行成三四行。
-                Text(caption)
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.5)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(0.5), radius: 10, y: 3)
-                    .frame(maxWidth: 900)
-                    .padding(.horizontal, 48)
-                    .padding(.bottom, 26)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
+            subtitleOverlay
 
             if volumeHUDVisible {
                 PlayerVolumeHUD(
@@ -975,6 +1016,43 @@ private struct VideoDetail: View {
             RoundedRectangle(cornerRadius: OpenMyChrome.radiusXl, style: .continuous)
                 .strokeBorder(OpenMyChrome.hair)
         }
+    }
+
+    private var displayedSubtitleCue: VideoSubtitleCue? {
+        guard subtitlesEnabled else { return nil }
+        return subtitleTrack?.cue(at: playback.currentTime)
+    }
+
+    private var subtitleOverlay: some View {
+        ZStack {
+            if let cue = displayedSubtitleCue {
+                // 双语恒为两行：原文一行 + 中文一行；长句靠缩小字号，不换行成三四行。
+                Text(cue.text)
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.5)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: .black.opacity(0.5), radius: 10, y: 3)
+                    .frame(maxWidth: 900)
+                    .padding(.horizontal, 48)
+                    .padding(.bottom, 26)
+                    .allowsHitTesting(false)
+                    .id(cue.id)
+                    .transition(.opacity)
+            }
+        }
+        .animation(subtitlePlaybackAnimation, value: displayedSubtitleCue?.id)
+    }
+
+    private var subtitlePlaybackAnimation: Animation? {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? nil
+            : .easeOut(duration: 0.18)
     }
 
     private func preparePlayerAfterSelection() {

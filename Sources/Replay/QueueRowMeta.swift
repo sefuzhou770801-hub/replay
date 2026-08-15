@@ -33,6 +33,9 @@ enum QueueRowMeta {
         }
     }
 
+    /// 小于此位移仍当单击，避免微抖被认成排序。
+    static let reorderDragThreshold: CGFloat = 12
+
     /// 本机文件还在才给出访达定位路径；缺文件或空路径不显示该菜单项。
     static func localFileToReveal(path: String?, exists: (String) -> Bool) -> String? {
         guard let path, !path.isEmpty, exists(path) else { return nil }

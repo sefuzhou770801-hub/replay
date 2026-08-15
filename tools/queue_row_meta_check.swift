@@ -37,6 +37,10 @@ struct QueueRowMetaCheck {
         precondition(QueueRowMeta.localFileToReveal(path: "", exists: { _ in true }) == nil)
         precondition(QueueRowMeta.localFileToReveal(path: "/tmp/gone.mp4", exists: { _ in false }) == nil)
         precondition(QueueRowMeta.localFileToReveal(path: "/tmp/ready.mp4", exists: { $0 == "/tmp/ready.mp4" }) == "/tmp/ready.mp4")
+        precondition(
+            QueueRowMeta.reorderDragThreshold >= 10,
+            "拖拽阈值过小会把单击认成排序"
+        )
 
         print("queue_row_meta_check=passed")
     }
