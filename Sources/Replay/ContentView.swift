@@ -541,7 +541,7 @@ private struct QueueRow: View, Equatable {
         HStack(spacing: 11) {
             QueueThumbnail(item: item, icon: icon, isSelected: isSelected)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 title
 
                 HStack(spacing: 5) {
@@ -553,7 +553,7 @@ private struct QueueRow: View, Equatable {
                     Text(statusText)
                         .lineLimit(1)
                 }
-                .font(.caption2.weight(.medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(item.state == .failed ? OpenMyChrome.rec : OpenMyChrome.muted)
 
                 if item.state == .downloading {
@@ -609,7 +609,7 @@ private struct QueueRow: View, Equatable {
             Text(item.title)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(OpenMyChrome.ink)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.tail)
                 .help("右键或双击已选中的条目可重命名")
         }
@@ -674,7 +674,7 @@ private struct QueueRowButtonStyle: ButtonStyle {
                         .fill(fill)
                         .overlay {
                             RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
-                                .strokeBorder(OpenMyChrome.hair)
+                                .strokeBorder(isSelected ? OpenMyChrome.rowSelectedStroke : OpenMyChrome.hair)
                         }
                 }
             }
@@ -723,7 +723,7 @@ private struct QueueThumbnail: View {
                     Spacer()
                     if let duration = item.duration, item.state == .ready {
                         Text(formatDuration(duration))
-                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 3)
@@ -794,7 +794,7 @@ private struct SidebarSectionHeader: View {
             Text("\(count)")
                 .monospacedDigit()
         }
-        .font(.caption.weight(.semibold))
+        .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(OpenMyChrome.muted)
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
@@ -956,7 +956,7 @@ private struct VideoDetail: View {
 
     private var centerPaneHeader: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(OpenMyChrome.ink)
@@ -965,7 +965,7 @@ private struct VideoDetail: View {
 
                 if !item.author.isEmpty {
                     Text(item.author)
-                        .font(.caption)
+                        .font(.system(size: 11))
                         .foregroundStyle(OpenMyChrome.muted)
                         .lineLimit(1)
                 }
@@ -1449,7 +1449,7 @@ private struct PlaybackControls: View {
                     Circle()
                         .fill(snapshot.isExternalPlaybackActive
                             ? Color.primary.opacity(0.12)
-                            : Color.primary.opacity(0.04))
+                            : Color.primary.opacity(0.01))
                 }
                 .help(snapshot.isExternalPlaybackActive ? "AirPlay 已连接" : "选择 AirPlay 设备")
 
@@ -1466,7 +1466,7 @@ private struct PlaybackControls: View {
     private func timeline(showRemainingTime: Bool) -> some View {
         HStack(spacing: 6) {
             Text(formatTime(displayTime))
-                .font(.caption.monospacedDigit())
+                .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 46, alignment: .trailing)
 
@@ -1486,7 +1486,7 @@ private struct PlaybackControls: View {
 
             if showRemainingTime {
                 Text("−\(formatTime(max(0, effectiveDuration - displayTime)))")
-                    .font(.caption.monospacedDigit())
+                    .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 48, alignment: .leading)
             }
@@ -1532,18 +1532,11 @@ private struct PlaybackSpeedMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "speedometer")
-                    .font(.caption)
-                Text(rateLabel(normalizedRate))
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.tertiary)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 9)
-            .frame(height: 32)
+            Text(rateLabel(normalizedRate))
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Color.primary.opacity(0.85))
+                .padding(.horizontal, 11)
+                .frame(height: 32)
             .contentShape(Capsule())
             .watchGlass(.clear, interactive: true, in: Capsule())
             .overlay {
@@ -1852,7 +1845,7 @@ private struct PlayerControlButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.primary.opacity(isPrimary || isSelected ? 1 : 0.85))
                 .frame(width: controlSize, height: controlSize)
                 .background {
@@ -1957,7 +1950,7 @@ private struct ChapterSidebar: View {
             modeToggle
 
             Text("\(listCount)")
-                .font(.caption.monospacedDigit())
+                .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -2002,7 +1995,7 @@ private struct ChapterSidebar: View {
             sidePaneModeRaw = mode.rawValue
         } label: {
             Text(title)
-                .font(.caption.weight(isSelected ? .semibold : .medium))
+                .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? OpenMyChrome.ink : OpenMyChrome.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -2035,11 +2028,11 @@ private struct ChapterSidebar: View {
                         } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
                                 Text(formatTime(chapter.startTime))
-                                    .font(.caption.monospacedDigit())
+                                    .font(.system(size: 11).monospacedDigit())
                                     .foregroundStyle(isCurrentChapter(chapter) ? Color.primary : Color.secondary)
                                     .frame(width: 52, alignment: .leading)
                                 Text(chapter.title)
-                                    .font(.callout.weight(isCurrentChapter(chapter) ? .semibold : .regular))
+                                    .font(.system(size: 13, weight: isCurrentChapter(chapter) ? .semibold : .regular))
                                     .foregroundStyle(.primary)
                                     .multilineTextAlignment(.leading)
                                     .lineLimit(2)
@@ -2086,7 +2079,7 @@ private struct ChapterSidebar: View {
                             } label: {
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                                     Text(formatTime(cue.startTime))
-                                        .font(.caption.monospacedDigit())
+                                        .font(.system(size: 11).monospacedDigit())
                                         .foregroundStyle(isCurrent ? Color.primary : Color.secondary)
                                         .frame(width: 52, alignment: .leading)
                                     cueTextStack(cue.text, isCurrent: isCurrent)
@@ -2171,20 +2164,20 @@ private struct ChapterSidebar: View {
         return VStack(alignment: .leading, spacing: 2) {
             if lines.count >= 2 {
                 Text(lines[0])
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(lines.dropFirst().joined(separator: "\n"))
-                    .font(.callout.weight(isCurrent ? .semibold : .regular))
+                    .font(.system(size: 13, weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(lines.first ?? text)
-                    .font(.callout.weight(isCurrent ? .semibold : .regular))
+                    .font(.system(size: 13, weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(4)
@@ -2198,10 +2191,10 @@ private struct ChapterSidebar: View {
         VStack(spacing: 8) {
             Spacer(minLength: 0)
             Text(title)
-                .font(.callout.weight(.semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(detail)
-                .font(.caption)
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary.opacity(0.8))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)

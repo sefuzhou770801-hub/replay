@@ -41,6 +41,10 @@ enum OpenMyChrome {
     static let rowSelected = Color(hex: rowSelectedHex)
     static let rowPressed = Color(hex: rowPressedHex)
 
+    /// 选中行描边。发丝线与选中底色只差一档看不出来，选中态需要亮一档的边。
+    static let rowSelectedStrokeHex: UInt32 = 0x3A3A3A
+    static let rowSelectedStroke = Color(hex: rowSelectedStrokeHex)
+
     /// 按下 > 选中 > 悬停 > 无底。选中必须比 raise 更亮，否则叠在画布上看不出点中。
     static func rowSurfaceHex(selected: Bool, pressed: Bool, hovering: Bool) -> UInt32? {
         if pressed { return rowPressedHex }
