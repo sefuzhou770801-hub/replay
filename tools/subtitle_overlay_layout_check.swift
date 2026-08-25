@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @main
@@ -9,6 +10,14 @@ struct SubtitleOverlayLayoutCheck {
         }
 
         precondition(SubtitleOverlayLayout.maxOverlayWidth == 900)
+        precondition(
+            SubtitleOverlayLayout.measurementSlack >= 8,
+            "单行测宽必须留出安全余量，避免尾词换进不可见第二行"
+        )
+        precondition(SubtitleOverlayLayout.lineBreakMode(wraps: false) == .byTruncatingTail)
+        precondition(SubtitleOverlayLayout.lineBreakMode(wraps: true) == .byWordWrapping)
+        precondition(SubtitleOverlayLayout.maximumLineCount(wraps: false) == 1)
+        precondition(SubtitleOverlayLayout.maximumLineCount(wraps: true) == 0)
         precondition(SubtitleOverlayLayout.baseFontSize(forSurfaceWidth: 420) == 16)
         precondition(SubtitleOverlayLayout.baseFontSize(forSurfaceWidth: 800) == 24)
         precondition(SubtitleOverlayLayout.baseFontSize(forSurfaceWidth: 1_280) == 32)
@@ -114,6 +123,52 @@ struct SubtitleOverlayLayoutCheck {
             realType.overlayWidth > 80,
             "真实英文行必须把浮层撑到足够宽度，实际 \(realType.overlayWidth)"
         )
+
+        let englishWidth = 22 * 24
+        precondition(!window.lines[0].wraps)
+        precondition(
+            window.contentWidth >= CGFloat(englishWidth) + SubtitleOverlayLayout.measurementSlack,
+            "单行态内容宽度必须大于测宽加余量，实际 \(window.contentWidth) 测宽 \(englishWidth)"
+        )
+
+        let months = "at Cursor for about five months"
+        let monthsTranslation = "Cursor工作了大约五个月。"
+        let monthsLayout = SubtitleOverlayLayout.resolve(
+            lines: [months, monthsTranslation],
+            surfaceWidth: 800
+        )
+        let monthsMeasured = SubtitleOverlayLayout.measureText(
+            months,
+            fontSize: monthsLayout.lines[0].fontSize
+        )
+        if monthsLayout.lines[0].wraps {
+            precondition(SubtitleOverlayLayout.maximumLineCount(wraps: true) == 0)
+            precondition(!monthsLayout.lines[0].isTruncated)
+        } else {
+            precondition(
+                monthsLayout.contentWidth >= monthsMeasured + SubtitleOverlayLayout.measurementSlack,
+                "临界句单行态必须留余量，否则 months 会静默丢失。内容宽 \(monthsLayout.contentWidth) 测宽 \(monthsMeasured)"
+            )
+            precondition(
+                SubtitleOverlayLayout.lineBreakMode(wraps: false) == .byTruncatingTail,
+                "单行态必须用省略号兜底，禁止 word wrap 把尾词换进不可见行"
+            )
+        }
+
+        let tightMeasure: (String, CGFloat) -> CGFloat = { text, _ in
+            text == months ? 740 : 80
+        }
+        let tight = SubtitleOverlayLayout.resolve(
+            lines: [months, monthsTranslation],
+            surfaceWidth: 800,
+            measure: tightMeasure
+        )
+        precondition(tight.lines[0].text == months)
+        precondition(
+            tight.lines[0].wraps || tight.contentWidth >= 740 + SubtitleOverlayLayout.measurementSlack,
+            "测宽顶满预算时必须折行或把浮层撑出余量，不得刚好贴边单行。wraps=\(tight.lines[0].wraps) content=\(tight.contentWidth)"
+        )
+        precondition(!tight.lines[0].isTruncated)
 
         print("subtitle_overlay_layout_check=passed")
     }

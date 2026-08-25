@@ -133,8 +133,9 @@ private final class PlayerSubtitleOverlayView: NSView {
         for textField in [sourceTextField, translationTextField] {
             textField.textColor = .white
             textField.alignment = .center
-            textField.maximumNumberOfLines = 1
-            textField.lineBreakMode = .byWordWrapping
+            textField.maximumNumberOfLines = SubtitleOverlayLayout.maximumLineCount(wraps: false)
+            textField.lineBreakMode = SubtitleOverlayLayout.lineBreakMode(wraps: false)
+            textField.usesSingleLineMode = true
             textField.setContentHuggingPriority(.defaultHigh, for: .horizontal)
             textField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         }
@@ -172,8 +173,9 @@ private final class PlayerSubtitleOverlayView: NSView {
         }
         for (field, line) in zip(fields, decision.lines) {
             field.font = SubtitleOverlayLayout.roundedFont(size: line.fontSize)
-            field.maximumNumberOfLines = line.wraps ? 0 : 1
-            field.lineBreakMode = .byWordWrapping
+            field.maximumNumberOfLines = SubtitleOverlayLayout.maximumLineCount(wraps: line.wraps)
+            field.lineBreakMode = SubtitleOverlayLayout.lineBreakMode(wraps: line.wraps)
+            field.usesSingleLineMode = !line.wraps
             field.preferredMaxLayoutWidth = decision.contentWidth
         }
     }

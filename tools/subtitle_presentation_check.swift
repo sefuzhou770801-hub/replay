@@ -96,6 +96,42 @@ struct SubtitlePresentationCheck {
             "空隙刚好约一秒时仍应延续上一句，实际：\(atThreshold?.text ?? "nil")"
         )
 
+        let codez = VideoSubtitleTrack(cues: [
+            VideoSubtitleCue(
+                startTime: 9.486,
+                endTime: 10.907,
+                text: "Potato with spelled with an E\nPotato，E结尾的。"
+            ),
+            VideoSubtitleCue(
+                startTime: 12.428,
+                endTime: 13.729,
+                text: "and I have been\n我在"
+            ),
+            VideoSubtitleCue(
+                startTime: 14.330,
+                endTime: 17.151,
+                text: "at Cursor for about five months\nCursor工作了大约五个月。"
+            )
+        ])
+        precondition(
+            VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 12.5)?.text
+                == "and I have been\n我在",
+            "短句在自身时间窗内必须显示，去重不得折叠原文与译文"
+        )
+        precondition(
+            VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 12.0) == nil,
+            "0:12.0 落在上一句结束后超过约一秒的空隙，延续不得把短句提前显示，也不得误伤后续短句"
+        )
+        precondition(
+            VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 13.9)?.text
+                == "and I have been\n我在",
+            "短句结束后 0.6 秒空隙应延续上一句"
+        )
+        precondition(
+            VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 14.5)?.text
+                == "at Cursor for about five months\nCursor工作了大约五个月。"
+        )
+
         print("subtitle_presentation_check=passed")
     }
 }

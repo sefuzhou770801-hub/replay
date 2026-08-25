@@ -6,6 +6,8 @@ enum SubtitleOverlayLayout {
     static let contentPadding: CGFloat = 28
     static let defaultBottomInset: CGFloat = 16
     static let floatingControlsBottomInset: CGFloat = 88
+    /// NSTextField 内边距与亚像素会比 `size(withAttributes:)` 更窄；无余量时尾词会被换进不可见第二行。
+    static let measurementSlack: CGFloat = 12
 
     struct LineDecision: Equatable {
         var text: String
@@ -56,6 +58,18 @@ enum SubtitleOverlayLayout {
         max(1, min(maxOverlayWidth, surfaceWidth - surfaceMargin * 2))
     }
 
+    static func lineBreakMode(wraps: Bool) -> NSLineBreakMode {
+        wraps ? .byWordWrapping : .byTruncatingTail
+    }
+
+    static func maximumLineCount(wraps: Bool) -> Int {
+        wraps ? 0 : 1
+    }
+
+    static func fits(_ measured: CGFloat, in available: CGFloat) -> Bool {
+        measured + measurementSlack <= available
+    }
+
     static func resolve(
         lines: [String],
         surfaceWidth: CGFloat,
@@ -68,11 +82,12 @@ enum SubtitleOverlayLayout {
         let minimum = minimumFontSize(forBase: base)
         let budget = max(1, availableOverlayWidth(surfaceWidth: surfaceWidth) - contentPadding)
         let naturalWidths = visibleLines.map { measure($0, base) }
-        let overlayContentWidth = min(budget, max(naturalWidths.max() ?? 0, 1))
+        let longest = max(naturalWidths.max() ?? 0, 1)
+        let overlayContentWidth = min(budget, longest + measurementSlack)
         let overlayWidth = overlayContentWidth + contentPadding
 
         let decisions = zip(visibleLines, naturalWidths).map { text, naturalWidth -> LineDecision in
-            if naturalWidth <= overlayContentWidth {
+            if fits(naturalWidth, in: overlayContentWidth) {
                 return LineDecision(
                     text: text,
                     fontSize: base,
@@ -91,9 +106,10 @@ enum SubtitleOverlayLayout {
                     isTruncated: false
                 )
             }
-            let fitted = max(minimum, floor(base * overlayContentWidth / max(naturalWidth, 1)))
+            let target = max(1, overlayContentWidth - measurementSlack)
+            let fitted = max(minimum, floor(base * target / max(naturalWidth, 1)))
             let fittedWidth = measure(text, fitted)
-            if fittedWidth <= overlayContentWidth {
+            if fits(fittedWidth, in: overlayContentWidth) {
                 return LineDecision(
                     text: text,
                     fontSize: fitted,
