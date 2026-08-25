@@ -72,6 +72,29 @@ struct VideoSubtitlePresentation: Equatable, Identifiable, Sendable {
     }
 }
 
+/// 整条浮层的淡入淡出只发生在「无字幕 ↔ 有字幕」边界；句间换字不改透明度。
+enum SubtitleOverlayChromeAnimation: Equatable {
+    case fadeIn
+    case fadeOut
+    case replace
+
+    static func resolve(
+        from previous: VideoSubtitlePresentation?,
+        to next: VideoSubtitlePresentation?
+    ) -> SubtitleOverlayChromeAnimation {
+        switch (previous, next) {
+        case (nil, .some):
+            return .fadeIn
+        case (.some, nil):
+            return .fadeOut
+        case (.some, .some):
+            return .replace
+        case (nil, nil):
+            return .fadeOut
+        }
+    }
+}
+
 struct VideoSubtitleTrack: Equatable, Sendable {
     let cues: [VideoSubtitleCue]
 

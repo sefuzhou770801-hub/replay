@@ -132,6 +132,22 @@ struct SubtitlePresentationCheck {
                 == "at Cursor for about five months\nCursor工作了大约五个月。"
         )
 
+        let first = VideoSubtitlePresentation.resolve(track: bilingual, isEnabled: true, at: 1)
+        let second = VideoSubtitlePresentation.resolve(track: bilingual, isEnabled: true, at: 3)
+        precondition(first != nil && second != nil)
+        precondition(SubtitleOverlayChromeAnimation.resolve(from: nil, to: first) == .fadeIn)
+        precondition(SubtitleOverlayChromeAnimation.resolve(from: first, to: nil) == .fadeOut)
+        precondition(
+            SubtitleOverlayChromeAnimation.resolve(from: first, to: second) == .replace,
+            "句间换字不得淡入淡出整条浮层"
+        )
+        let heldShort = VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 13.9)
+        let months = VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 14.5)
+        precondition(
+            SubtitleOverlayChromeAnimation.resolve(from: heldShort, to: months) == .replace,
+            "延续句切到下一句时浮层应保持可见"
+        )
+
         print("subtitle_presentation_check=passed")
     }
 }

@@ -76,6 +76,7 @@ private final class PlayerSubtitleOverlayView: NSView {
 
     func setPresentation(_ presentation: VideoSubtitlePresentation?, animated: Bool) {
         guard self.presentation != presentation else { return }
+        let chrome = SubtitleOverlayChromeAnimation.resolve(from: self.presentation, to: presentation)
         self.presentation = presentation
         animationGeneration &+= 1
         let generation = animationGeneration
@@ -86,7 +87,7 @@ private final class PlayerSubtitleOverlayView: NSView {
             isHidden = false
             applyLayoutDecision()
             needsLayout = true
-            if shouldAnimate {
+            if chrome == .fadeIn, shouldAnimate {
                 alphaValue = 0
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.18
@@ -99,7 +100,7 @@ private final class PlayerSubtitleOverlayView: NSView {
             return
         }
 
-        guard shouldAnimate, !isHidden else {
+        guard chrome == .fadeOut, shouldAnimate, !isHidden else {
             alphaValue = 0
             isHidden = true
             clearText()
@@ -200,6 +201,7 @@ final class FloatingVideoPlayerView: AVPlayerView {
 
     var displayedSubtitleText: String? { subtitleOverlay.displayedText }
     var displayedSubtitleLines: [String] { subtitleOverlay.displayedLines }
+    var subtitleOverlayAlpha: CGFloat { subtitleOverlay.alphaValue }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -301,6 +303,7 @@ final class PictureInPicturePlayerView: NSView {
 
     var displayedSubtitleText: String? { subtitleOverlay.displayedText }
     var displayedSubtitleLines: [String] { subtitleOverlay.displayedLines }
+    var subtitleOverlayAlpha: CGFloat { subtitleOverlay.alphaValue }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

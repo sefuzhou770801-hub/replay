@@ -37,6 +37,14 @@ struct PlaybackCommandCheck {
         resizingPlayerView.setSubtitlePresentation(firstSubtitle, animated: false)
         precondition(resizingPlayerView.displayedSubtitleText == "Original line\n中文字幕")
         precondition(resizingPlayerView.displayedSubtitleLines == ["Original line", "中文字幕"])
+        precondition(abs(resizingPlayerView.subtitleOverlayAlpha - 1) < 0.01)
+        resizingPlayerView.setSubtitlePresentation(secondSubtitle, animated: true)
+        precondition(
+            abs(resizingPlayerView.subtitleOverlayAlpha - 1) < 0.01,
+            "句间换字不得把浮层透明度归零，实际 \(resizingPlayerView.subtitleOverlayAlpha)"
+        )
+        precondition(resizingPlayerView.displayedSubtitleText == "Next line\n下一句")
+        resizingPlayerView.setSubtitlePresentation(firstSubtitle, animated: false)
 
         let floatingPlayerView = FloatingVideoPlayerView(frame: NSRect(x: 0, y: 0, width: 420, height: 236.25))
         floatingPlayerView.setSubtitlePresentation(firstSubtitle, animated: false)
@@ -48,8 +56,31 @@ struct PlaybackCommandCheck {
             floatingPlayerView.displayedSubtitleLines == ["Original line", "中文字幕"],
             "原文和中文字幕必须各占一行"
         )
-        floatingPlayerView.setSubtitlePresentation(secondSubtitle, animated: false)
+        floatingPlayerView.setSubtitlePresentation(secondSubtitle, animated: true)
+        precondition(
+            abs(floatingPlayerView.subtitleOverlayAlpha - 1) < 0.01,
+            "悬浮窗句间换字也不得把浮层透明度归零"
+        )
         precondition(floatingPlayerView.displayedSubtitleText == "Next line\n下一句")
+        let denseTrack = VideoSubtitleTrack(cues: (0..<8).map { index in
+            VideoSubtitleCue(
+                startTime: Double(index),
+                endTime: Double(index) + 0.9,
+                text: "Line \(index)\n第\(index)句"
+            )
+        })
+        for index in 0..<8 {
+            let cue = VideoSubtitlePresentation.resolve(
+                track: denseTrack,
+                isEnabled: true,
+                at: Double(index) + 0.1
+            )
+            resizingPlayerView.setSubtitlePresentation(cue, animated: true)
+            precondition(
+                abs(resizingPlayerView.subtitleOverlayAlpha - 1) < 0.01,
+                "密集换句第 \(index) 次浮层透明度被归零"
+            )
+        }
         let identicalSubtitle = VideoSubtitlePresentation.resolve(
             track: VideoSubtitleTrack(cues: [
                 VideoSubtitleCue(startTime: 0, endTime: 2, text: "Sundar Pichai\nSundar Pichai")
