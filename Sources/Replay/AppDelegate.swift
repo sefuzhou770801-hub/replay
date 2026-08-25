@@ -47,86 +47,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let shortcutModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            let window = PlaybackKeyboardRouting.window(for: event)
+            let decision = PlaybackKeyboardRouting.action(
+                in: window,
+                keyCode: event.keyCode,
+                character: event.charactersIgnoringModifiers,
+                modifiers: event.modifierFlags,
+                hasActivePlayer: PlaybackCommandCenter.shared.hasActivePlayer
+            )
 
-            // SwiftUI text fields use AppKit's shared field editor. Let it
-            // receive navigation, editing, and paste keys before considering
-            // any app-wide playback or URL shortcuts.
-            if Self.isEditingText(in: event.window) {
+            switch decision {
+            case .passThrough:
                 return event
-            }
-
-            if shortcutModifiers.isEmpty {
-                if event.keyCode == 49, PlaybackCommandCenter.shared.hasActivePlayer {
-                    if !event.isARepeat {
-                        PlaybackCommandCenter.shared.togglePlayback()
-                    }
+            case .insertLiteralSpace:
+                // 无修饰空格才会到这里。SwiftUI 字段编辑器会把普通空格交给播放按钮，
+                // 必须写入 U+0020 并消费。带修饰键的空格走 passThrough，留给系统。
+                if PlaybackKeyboardRouting.insertPlainText(" ", in: window) {
                     return nil
                 }
-
-                if event.charactersIgnoringModifiers?.lowercased() == "f",
-                   PlaybackCommandCenter.shared.hasActivePlayer {
-                    if !event.isARepeat {
-                        PlaybackCommandCenter.shared.toggleFullscreen()
-                    }
-                    return nil
-                }
-
-                if event.keyCode == 53,
-                   PlaybackCommandCenter.shared.exitFullscreen() {
-                    return nil
-                }
-
-                if event.keyCode == 126,
-                   PlaybackCommandCenter.shared.adjustPlaybackRate(by: 0.1) {
-                    return nil
-                }
-                if event.keyCode == 125,
-                   PlaybackCommandCenter.shared.adjustPlaybackRate(by: -0.1) {
-                    return nil
-                }
-
-                let skipAmount: Double?
-                switch event.keyCode {
-                case 123: skipAmount = -10
-                case 124: skipAmount = 10
-                default: skipAmount = nil
-                }
-                if let skipAmount, PlaybackCommandCenter.shared.skip(by: skipAmount) {
-                    return nil
-                }
-            }
-
-            guard shortcutModifiers == .command,
-                  event.charactersIgnoringModifiers?.lowercased() == "v" else {
                 return event
-            }
-
-            let pasteboard = NSPasteboard.general
-            let urlType = NSPasteboard.PasteboardType("public.url")
-            guard let value = pasteboard.string(forType: .string)
-                    ?? pasteboard.string(forType: urlType) else {
-                NSSound.beep()
+            case .resignTextFocus:
+                PlaybackWindowFocusController.resign(in: event.window)
+                return nil
+            case .togglePlayback:
+                if !event.isARepeat {
+                    PlaybackCommandCenter.shared.togglePlayback()
+                }
+                return nil
+            case .toggleFullscreen:
+                if !event.isARepeat {
+                    PlaybackCommandCenter.shared.toggleFullscreen()
+                }
+                return nil
+            case .exitFullscreen:
+                return PlaybackCommandCenter.shared.exitFullscreen() ? nil : event
+            case .skip(let seconds):
+                return PlaybackCommandCenter.shared.skip(by: seconds) ? nil : event
+            case .adjustRate(let delta):
+                return PlaybackCommandCenter.shared.adjustPlaybackRate(by: delta) ? nil : event
+            case .pasteURL:
+                let pasteboard = NSPasteboard.general
+                let urlType = NSPasteboard.PasteboardType("public.url")
+                guard let value = pasteboard.string(forType: .string)
+                        ?? pasteboard.string(forType: urlType) else {
+                    NSSound.beep()
+                    return nil
+                }
+                self?.inbox.receiveClipboard(value)
                 return nil
             }
-
-            self?.inbox.receiveClipboard(value)
-            return nil
         }
-    }
-
-    private static func isEditingText(in window: NSWindow?) -> Bool {
-        guard let responder = window?.firstResponder else { return false }
-        if let textView = responder as? NSTextView {
-            return textView.isEditable
-        }
-        if let textField = responder as? NSTextField {
-            return textField.isEditable
-        }
-        if let control = responder as? NSControl {
-            return control.currentEditor() != nil
-        }
-        return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {

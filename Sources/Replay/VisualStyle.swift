@@ -96,6 +96,7 @@ struct WindowStyleConfigurator: NSViewRepresentable {
         private let sidebarToggleVerticalOffset: CGFloat = 4
         weak var alignedWindow: NSWindow?
         let activationClickShield = ForegroundActivationClickShield()
+        let windowFocusController = PlaybackWindowFocusController()
 
         func centerTrafficLights(in window: NSWindow) {
             guard alignedWindow !== window else { return }
@@ -177,6 +178,7 @@ struct WindowStyleConfigurator: NSViewRepresentable {
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
         coordinator.activationClickShield.detach()
+        coordinator.windowFocusController.detach()
     }
 
     private func configure(_ window: NSWindow?, coordinator: Coordinator) {
@@ -200,6 +202,7 @@ struct WindowStyleConfigurator: NSViewRepresentable {
         coordinator.centerTrafficLights(in: window)
         coordinator.scheduleSidebarToggleAlignment(in: window)
         coordinator.activationClickShield.attach(to: window)
+        coordinator.windowFocusController.attach(to: window)
         let minimumSize = NSSize(width: 980, height: 640)
         window.minSize = minimumSize
 
