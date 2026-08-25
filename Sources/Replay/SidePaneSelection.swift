@@ -18,6 +18,17 @@ enum SidePaneSelection {
         preferred
     }
 
+    static func recomputedMode(
+        current: SidePaneMode,
+        hasChapters: Bool,
+        userHasManuallySwitched: Bool
+    ) -> SidePaneMode {
+        if userHasManuallySwitched {
+            return current
+        }
+        return openingMode(hasChapters: hasChapters)
+    }
+
     static func visibleTitle(for mode: SidePaneMode) -> String {
         switch mode {
         case .chapters:

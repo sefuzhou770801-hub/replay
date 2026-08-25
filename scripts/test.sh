@@ -76,6 +76,11 @@ compile_and_run side_pane_selection \
     "$project_dir/Sources/Replay/SidePaneSelection.swift" \
     "$project_dir/tools/side_pane_selection_check.swift"
 
+compile_and_run player_ready \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/PlayerReadyDecision.swift" \
+    "$project_dir/tools/player_ready_check.swift"
+
 compile_and_run keyboard_routing \
     "$project_dir/Sources/Replay/PlaybackKeyboardRouting.swift" \
     "$project_dir/Sources/Replay/PlaybackWindowFocusController.swift" \
