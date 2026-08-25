@@ -1040,6 +1040,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
         private let onVolumeChange: (Double) -> Void
         private let onEnded: () -> Void
         private var lastSeekRequestID: UUID?
+        private var pendingSeekTime: Double?
         private var commandToken: UUID?
         private var preferredRate: Double = 1
         private var currentTitle = ""
@@ -1074,6 +1075,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
             currentAuthor = author
             reachedEnd = false
             lastSeekRequestID = nil
+            pendingSeekTime = nil
             preferredRate = PlaybackRatePreference.load()
             let playerItem = AVPlayerItem(url: url)
             playerItem.audioTimePitchAlgorithm = PlaybackAudioPolicy.timePitchAlgorithm
@@ -1122,8 +1124,9 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
                 queue: .main
             ) { [weak self] time in
-                self?.publishSnapshot()
-                self?.publishSubtitle(at: time.seconds, animated: true)
+                guard let self else { return }
+                self.publishSnapshot()
+                self.publishSubtitle(at: self.subtitleClockTime(playerTime: time.seconds), animated: true)
             }
             endObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemDidPlayToEndTime,
@@ -1156,19 +1159,21 @@ struct LocalVideoPlayer: NSViewRepresentable {
         func updateSubtitles(track: VideoSubtitleTrack?, isEnabled: Bool) {
             subtitleTrack = track
             subtitlesEnabled = isEnabled
-            let currentTime = player?.currentTime().seconds ?? 0
-            publishSubtitle(at: currentTime.isFinite ? currentTime : 0, animated: false)
+            publishSubtitle(at: subtitleClockTime(playerTime: player?.currentTime().seconds ?? 0), animated: false)
         }
 
         func seek(to request: PlayerSeekRequest) {
             guard lastSeekRequestID != request.id, let player else { return }
             lastSeekRequestID = request.id
             reachedEnd = false
-            let time = CMTime(seconds: max(0, request.time), preferredTimescale: 600)
-            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-                if request.shouldPlay { self?.startPlayback(player) }
-                self?.publishSnapshot()
-            }
+            beginSeek(
+                player: player,
+                to: SubtitleDispatchPolicy.presentationTime(
+                    afterSeekTo: request.time,
+                    playerTime: player.currentTime().seconds
+                ),
+                shouldPlay: request.shouldPlay
+            )
         }
 
         private func skip(by seconds: Double) {
@@ -1180,12 +1185,24 @@ struct LocalVideoPlayer: NSViewRepresentable {
             if duration.isFinite { target = min(target, duration) }
             let shouldKeepPlaying = player.timeControlStatus != .paused
             reachedEnd = false
-            let time = CMTime(seconds: target, preferredTimescale: 600)
+            let seekTime = SubtitleDispatchPolicy.presentationTime(
+                afterSeekTo: target,
+                playerTime: current
+            )
+            beginSeek(player: player, to: seekTime, shouldPlay: shouldKeepPlaying)
+            onProgress(seekTime)
+        }
+
+        private func beginSeek(player: AVPlayer, to seekTime: Double, shouldPlay: Bool) {
+            pendingSeekTime = seekTime
+            publishSubtitle(at: seekTime, animated: false)
+            let time = CMTime(seconds: seekTime, preferredTimescale: 600)
             player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-                if shouldKeepPlaying { self?.startPlayback(player) }
+                if shouldPlay { self?.startPlayback(player) }
+                self?.pendingSeekTime = nil
                 self?.publishSnapshot()
+                self?.publishSubtitle(at: seekTime, animated: false)
             }
-            onProgress(target)
         }
 
         private func togglePlayback() {
@@ -1311,10 +1328,6 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 target: self,
                 action: #selector(handleVideoClick(_:))
             ))
-            fullscreenView.setSubtitlePresentation(
-                currentSubtitlePresentation(),
-                animated: false
-            )
 
             playerView?.playerLayer.player = nil
             fullscreenView.playerLayer.player = player
@@ -1332,6 +1345,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
             isVideoFullscreen = true
             shouldExitAfterEnteringFullscreen = false
             observeFullscreenTransitions(for: window)
+            publishCurrentSubtitle(animated: false)
             return true
         }
 
@@ -1378,6 +1392,9 @@ struct LocalVideoPlayer: NSViewRepresentable {
 
             if restoreInline, backgroundPanel == nil, let player {
                 playerView?.playerLayer.player = player
+            }
+            if restoreInline {
+                publishCurrentSubtitle(animated: false)
             }
         }
 
@@ -1504,10 +1521,6 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 guard let self, let panel else { return }
                 self.returnToMainWindow(from: panel)
             }
-            floatingView.setSubtitlePresentation(
-                currentSubtitlePresentation(),
-                animated: false
-            )
 
             let visibleFrame = playerView?.window?.screen?.visibleFrame
                 ?? NSScreen.main?.visibleFrame
@@ -1522,6 +1535,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
             floatingView.player = player
             backgroundPanel = panel
             backgroundPlayerView = floatingView
+            publishCurrentSubtitle(animated: false)
             panel.alphaValue = 0
             panel.orderFrontRegardless()
 
@@ -1575,6 +1589,9 @@ struct LocalVideoPlayer: NSViewRepresentable {
             panel.close()
             backgroundPlayerView = nil
             backgroundPanel = nil
+            if restoreInline {
+                publishCurrentSubtitle(animated: false)
+            }
         }
 
         private func returnToMainWindow(from panel: NSPanel) {
@@ -1610,6 +1627,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 if seconds.isFinite { onProgress(seconds) }
             }
             publishSnapshot()
+            publishCurrentSubtitle(animated: false)
         }
 
         private func attachPlayerToPrimarySurface(_ player: AVPlayer) {
@@ -1641,14 +1659,19 @@ struct LocalVideoPlayer: NSViewRepresentable {
             }
         }
 
-        private func currentSubtitlePresentation() -> VideoSubtitlePresentation? {
-            let rawCurrent = player?.currentTime().seconds ?? .nan
-            let current = rawCurrent.isFinite ? max(0, rawCurrent) : 0
-            return VideoSubtitlePresentation.resolve(
-                track: subtitleTrack,
-                isEnabled: subtitlesEnabled,
-                at: current
+        private func subtitleClockTime(playerTime: Double) -> Double {
+            SubtitleDispatchPolicy.visibleTime(
+                pendingSeekTime: pendingSeekTime,
+                playerTime: playerTime
             )
+        }
+
+        private func currentSubtitleTime() -> Double {
+            subtitleClockTime(playerTime: player?.currentTime().seconds ?? .nan)
+        }
+
+        private func publishCurrentSubtitle(animated: Bool) {
+            publishSubtitle(at: currentSubtitleTime(), animated: animated)
         }
 
         private func publishSubtitle(at time: Double, animated: Bool) {
@@ -1657,9 +1680,20 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 isEnabled: subtitlesEnabled,
                 at: time
             )
-            playerView?.setSubtitlePresentation(presentation, animated: animated)
-            fullscreenPlayerView?.setSubtitlePresentation(presentation, animated: animated)
-            backgroundPlayerView?.setSubtitlePresentation(presentation, animated: animated)
+            let destination = SubtitleDispatchPolicy.destination(
+                isFloatingActive: backgroundPlayerView != nil,
+                isFullscreen: isVideoFullscreen
+            )
+            func apply(
+                _ surface: SubtitleDispatchSurface,
+                set: (VideoSubtitlePresentation?, Bool) -> Void
+            ) {
+                let receives = SubtitleDispatchPolicy.shouldReceive(surface, destination: destination)
+                set(receives ? presentation : nil, receives && animated)
+            }
+            apply(.primary) { playerView?.setSubtitlePresentation($0, animated: $1) }
+            apply(.fullscreen) { fullscreenPlayerView?.setSubtitlePresentation($0, animated: $1) }
+            apply(.floating) { backgroundPlayerView?.setSubtitlePresentation($0, animated: $1) }
         }
 
         func stop() {
@@ -1709,6 +1743,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 PlaybackCommandCenter.shared.unregister(commandToken)
             }
             commandToken = nil
+            pendingSeekTime = nil
             playerView?.setSubtitlePresentation(nil, animated: false)
             playerView?.playerLayer.player = nil
             playerView?.onVolumeScroll = nil
