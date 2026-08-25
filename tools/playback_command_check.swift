@@ -50,6 +50,20 @@ struct PlaybackCommandCheck {
         )
         floatingPlayerView.setSubtitlePresentation(secondSubtitle, animated: false)
         precondition(floatingPlayerView.displayedSubtitleText == "Next line\n下一句")
+        let identicalSubtitle = VideoSubtitlePresentation.resolve(
+            track: VideoSubtitleTrack(cues: [
+                VideoSubtitleCue(startTime: 0, endTime: 2, text: "Sundar Pichai\nSundar Pichai")
+            ]),
+            isEnabled: true,
+            at: 1
+        )
+        resizingPlayerView.setSubtitlePresentation(identicalSubtitle, animated: false)
+        floatingPlayerView.setSubtitlePresentation(identicalSubtitle, animated: false)
+        precondition(
+            resizingPlayerView.displayedSubtitleLines == ["Sundar Pichai"],
+            "原文与译文相同时主窗与悬浮窗都只显示一行"
+        )
+        precondition(floatingPlayerView.displayedSubtitleLines == ["Sundar Pichai"])
         floatingPlayerView.setSubtitlePresentation(nil, animated: false)
         precondition(floatingPlayerView.displayedSubtitleText == nil)
 

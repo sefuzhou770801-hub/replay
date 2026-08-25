@@ -21,13 +21,54 @@ struct VideoSubtitlePresentation: Equatable, Identifiable, Sendable {
     let id: VideoSubtitleCueID
     let text: String
 
+    /// 句间空隙低于该时长时延续上一句，避免整条浮层闪没再闪出。
+    static let interCueHoldThreshold: Double = 1.0
+
     static func resolve(
         track: VideoSubtitleTrack?,
         isEnabled: Bool,
         at time: Double
     ) -> VideoSubtitlePresentation? {
-        guard isEnabled, let cue = track?.cue(at: time) else { return nil }
-        return VideoSubtitlePresentation(id: cue.id, text: cue.text)
+        guard isEnabled, let track, time.isFinite else { return nil }
+        if let cue = track.cue(at: time) {
+            return presentation(for: cue)
+        }
+        return holdOverPresentation(track: track, at: time)
+    }
+
+    /// 连续相同行折叠为一行：原文与译文相同时只显示一次。
+    static func displayLines(from text: String) -> [String] {
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var unique: [String] = []
+        unique.reserveCapacity(lines.count)
+        for line in lines where unique.last != line {
+            unique.append(line)
+        }
+        return unique
+    }
+
+    static func displayText(from text: String) -> String {
+        displayLines(from: text).joined(separator: "\n")
+    }
+
+    private static func presentation(for cue: VideoSubtitleCue) -> VideoSubtitlePresentation {
+        VideoSubtitlePresentation(id: cue.id, text: displayText(from: cue.text))
+    }
+
+    private static func holdOverPresentation(
+        track: VideoSubtitleTrack,
+        at time: Double
+    ) -> VideoSubtitlePresentation? {
+        let previous = track.cues.last { $0.endTime <= time }
+        guard let previous else { return nil }
+        let next = track.cues.first { $0.startTime >= time }
+        guard let next else { return nil }
+        let gap = next.startTime - previous.endTime
+        guard gap > 0, gap <= interCueHoldThreshold, time < next.startTime else { return nil }
+        return presentation(for: previous)
     }
 }
 

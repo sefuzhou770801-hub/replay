@@ -8,7 +8,9 @@ private final class PlayerSubtitleOverlayView: NSView {
     private let textStack = NSStackView()
     private(set) var presentation: VideoSubtitlePresentation?
     private var animationGeneration = 0
-    private var baseFontSize: CGFloat = 24
+    private var surfaceWidth: CGFloat = 800
+    private var bottomConstraint: NSLayoutConstraint?
+    private var widthConstraint: NSLayoutConstraint?
 
     var displayedText: String? { presentation?.text }
     var displayedLines: [String] {
@@ -31,16 +33,45 @@ private final class PlayerSubtitleOverlayView: NSView {
         nil
     }
 
+    func install(in view: NSView) {
+        view.addSubview(self, positioned: .above, relativeTo: nil)
+        let bottom = bottomAnchor.constraint(
+            equalTo: view.bottomAnchor,
+            constant: -SubtitleOverlayLayout.defaultBottomInset
+        )
+        let width = widthAnchor.constraint(equalToConstant: 1)
+        width.priority = .defaultHigh
+        bottomConstraint = bottom
+        widthConstraint = width
+        NSLayoutConstraint.activate([
+            centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            bottom,
+            width,
+            leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor,
+                constant: SubtitleOverlayLayout.surfaceMargin
+            ),
+            trailingAnchor.constraint(
+                lessThanOrEqualTo: view.trailingAnchor,
+                constant: -SubtitleOverlayLayout.surfaceMargin
+            ),
+            widthAnchor.constraint(lessThanOrEqualToConstant: SubtitleOverlayLayout.maxOverlayWidth)
+        ])
+    }
+
+    func setControlsVisible(_ visible: Bool) {
+        bottomConstraint?.constant = -SubtitleOverlayLayout.overlayBottomInset(controlsVisible: visible)
+    }
+
     func updateForSurfaceWidth(_ width: CGFloat) {
-        baseFontSize = width < 600 ? 16 : 24
+        surfaceWidth = width
+        applyLayoutDecision()
         needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let availableWidth = max(1, bounds.width - 28)
-        updateFont(for: sourceTextField, availableWidth: availableWidth)
-        updateFont(for: translationTextField, availableWidth: availableWidth)
+        applyLayoutDecision()
     }
 
     func setPresentation(_ presentation: VideoSubtitlePresentation?, animated: Bool) {
@@ -51,13 +82,9 @@ private final class PlayerSubtitleOverlayView: NSView {
         let shouldAnimate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         if let presentation {
-            let lines = presentation.text
-                .split(whereSeparator: \Character.isNewline)
-                .map(String.init)
-            sourceTextField.stringValue = lines.first ?? presentation.text
-            translationTextField.stringValue = lines.dropFirst().joined(separator: " ")
-            translationTextField.isHidden = translationTextField.stringValue.isEmpty
+            applyLineTexts(from: presentation)
             isHidden = false
+            applyLayoutDecision()
             needsLayout = true
             if shouldAnimate {
                 alphaValue = 0
@@ -107,8 +134,9 @@ private final class PlayerSubtitleOverlayView: NSView {
             textField.textColor = .white
             textField.alignment = .center
             textField.maximumNumberOfLines = 1
-            textField.lineBreakMode = .byTruncatingTail
-            textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            textField.lineBreakMode = .byWordWrapping
+            textField.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+            textField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         }
 
         textStack.translatesAutoresizingMaskIntoConstraints = false
@@ -122,50 +150,41 @@ private final class PlayerSubtitleOverlayView: NSView {
             textStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             textStack.topAnchor.constraint(equalTo: topAnchor, constant: 7),
-            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
-            sourceTextField.widthAnchor.constraint(equalTo: textStack.widthAnchor),
-            translationTextField.widthAnchor.constraint(equalTo: textStack.widthAnchor)
+            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7)
         ])
         updateForSurfaceWidth(800)
     }
 
-    private func updateFont(for textField: NSTextField, availableWidth: CGFloat) {
-        guard !textField.stringValue.isEmpty else { return }
-        let baseFont = roundedFont(size: baseFontSize)
-        let measuredWidth = (textField.stringValue as NSString).size(
-            withAttributes: [.font: baseFont]
-        ).width
-        let minimumSize: CGFloat = baseFontSize == 16 ? 11 : 12
-        let fittedSize = measuredWidth > availableWidth
-            ? max(minimumSize, floor(baseFontSize * availableWidth / measuredWidth))
-            : baseFontSize
-        if textField.font?.pointSize != fittedSize {
-            textField.font = roundedFont(size: fittedSize)
-        }
+    private func applyLineTexts(from presentation: VideoSubtitlePresentation) {
+        let lines = VideoSubtitlePresentation.displayLines(from: presentation.text)
+        sourceTextField.stringValue = lines.first ?? ""
+        translationTextField.stringValue = lines.dropFirst().joined(separator: " ")
+        translationTextField.isHidden = translationTextField.stringValue.isEmpty
     }
 
-    private func roundedFont(size: CGFloat) -> NSFont {
-        let baseFont = NSFont.systemFont(ofSize: size, weight: .semibold)
-        let descriptor = baseFont.fontDescriptor.withDesign(.rounded)
-        return descriptor.flatMap { NSFont(descriptor: $0, size: size) } ?? baseFont
+    private func applyLayoutDecision() {
+        let texts = displayedLines
+        guard !texts.isEmpty else { return }
+        let decision = SubtitleOverlayLayout.resolve(lines: texts, surfaceWidth: surfaceWidth)
+        widthConstraint?.constant = decision.overlayWidth
+        let fields = [sourceTextField, translationTextField].filter {
+            !$0.isHidden && !$0.stringValue.isEmpty
+        }
+        for (field, line) in zip(fields, decision.lines) {
+            field.font = SubtitleOverlayLayout.roundedFont(size: line.fontSize)
+            field.maximumNumberOfLines = line.wraps ? 0 : 1
+            field.lineBreakMode = .byWordWrapping
+            field.preferredMaxLayoutWidth = decision.contentWidth
+        }
     }
 
     private func clearText() {
         sourceTextField.stringValue = ""
         translationTextField.stringValue = ""
         translationTextField.isHidden = true
+        sourceTextField.preferredMaxLayoutWidth = 0
+        translationTextField.preferredMaxLayoutWidth = 0
     }
-}
-
-private func installSubtitleOverlay(_ overlay: PlayerSubtitleOverlayView, in view: NSView) {
-    view.addSubview(overlay, positioned: .above, relativeTo: nil)
-    NSLayoutConstraint.activate([
-        overlay.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-        overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
-        overlay.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 16),
-        overlay.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -16),
-        overlay.widthAnchor.constraint(lessThanOrEqualToConstant: 900)
-    ])
 }
 
 final class FloatingVideoPlayerView: AVPlayerView {
@@ -182,13 +201,13 @@ final class FloatingVideoPlayerView: AVPlayerView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        installSubtitleOverlay(subtitleOverlay, in: self)
+        subtitleOverlay.install(in: self)
         configureReturnButton()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        installSubtitleOverlay(subtitleOverlay, in: self)
+        subtitleOverlay.install(in: self)
         configureReturnButton()
     }
 
@@ -262,6 +281,7 @@ final class FloatingVideoPlayerView: AVPlayerView {
 
     private func setHoverControlsVisible(_ visible: Bool) {
         returnButton.isHidden = !visible
+        subtitleOverlay.setControlsVisible(visible)
         onHoverChanged?(visible)
     }
 
@@ -301,7 +321,7 @@ final class PictureInPicturePlayerView: NSView {
             "position": NSNull(),
             "frame": NSNull()
         ]
-        installSubtitleOverlay(subtitleOverlay, in: self)
+        subtitleOverlay.install(in: self)
         updatePlayerLayerFrame()
     }
 
