@@ -11,9 +11,14 @@ struct SidebarHitRow: View {
 
     var body: some View {
         Button(action: { log.selected.append(index) }) {
-            Text("row-\(index)")
-                .frame(maxWidth: .infinity, minHeight: 70, maxHeight: 70, alignment: .leading)
-                .contentShape(Rectangle())
+            VStack(spacing: 0) {
+                if index == 0 {
+                    SidebarQueueLayout.FirstRowTopGutter()
+                }
+                Text("row-\(index)")
+                    .frame(maxWidth: .infinity, minHeight: 70, maxHeight: 70, alignment: .leading)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -27,15 +32,14 @@ struct SidebarHitList: View {
 
     var body: some View {
         ScrollView(.vertical) {
-            LazyVStack(alignment: .leading, spacing: SidebarQueueLayout.rowSpacing) {
-                ForEach(0..<9, id: \.self) { index in
-                    SidebarHitRow(index: index, log: log)
+            SidebarQueueLayout.ScrollStack {
+                LazyVStack(alignment: .leading, spacing: SidebarQueueLayout.rowSpacing) {
+                    ForEach(0..<9, id: \.self) { index in
+                        SidebarHitRow(index: index, log: log)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, SidebarQueueLayout.listHorizontalPadding)
-            .padding(.top, SidebarQueueLayout.listTopPadding)
-            .padding(.bottom, SidebarQueueLayout.listBottomPadding)
         }
         .scrollIndicators(.hidden)
         .clipped()
@@ -52,21 +56,30 @@ struct SidebarHitTestCheck {
     }
 
     private static func assertLayoutPolicy() {
-        // 头部 46 + 分隔线 1 + 列表顶垫 8 = 55。首行高 70，行距 4。
+        // 添加栏 46 + 分隔线 1 = 47。顶垫 8 点属于第 1 行宽容命中。queue-top 不吃行距。
         precondition(SidebarQueueLayout.addBarHeight == 46)
         precondition(SidebarQueueLayout.listTopPadding == 8)
         precondition(SidebarQueueLayout.rowSpacing == 4)
+        precondition(SidebarQueueLayout.addBarBottomY == 47)
+        precondition(SidebarQueueLayout.listOriginY == 55)
+        precondition(SidebarQueueLayout.queueTopAnchorID == "queue-top")
         precondition(
             SidebarQueueLayout.rowIndex(atWindowY: 20, rowHeight: 70, rowCount: 9) == nil,
             "点在添加栏内不得选中队列行"
         )
+        for y: CGFloat in [40, 44, 46] {
+            precondition(
+                SidebarQueueLayout.rowIndex(atWindowY: y, rowHeight: 70, rowCount: 9) == nil,
+                "添加栏 y=\(y) 不得选中队列行"
+            )
+        }
         precondition(
-            SidebarQueueLayout.rowIndex(atWindowY: 31, rowHeight: 70, rowCount: 9) == nil,
-            "标题栏区域不得再充当第 1 行命中区"
+            SidebarQueueLayout.rowIndex(atWindowY: 48, rowHeight: 70, rowCount: 9) == 0,
+            "添加栏下沿起的顶垫应命中第 1 行"
         )
         precondition(
-            SidebarQueueLayout.rowIndex(atWindowY: 50, rowHeight: 70, rowCount: 9) == nil,
-            "添加栏下的 8 点顶垫不得映射到任何行"
+            SidebarQueueLayout.rowIndex(atWindowY: 50, rowHeight: 70, rowCount: 9) == 0,
+            "8 点顶垫属于第 1 行宽容命中"
         )
         precondition(
             SidebarQueueLayout.rowIndex(atWindowY: 90, rowHeight: 70, rowCount: 9) == 0,
@@ -146,10 +159,17 @@ struct SidebarHitTestCheck {
         click(window, topY: 20)
         precondition(log.selected.isEmpty, "点添加栏不得选中队列行，实际 \(log.selected)")
 
-        log.selected.removeAll()
-        click(window, topY: 50)
-        precondition(log.selected.isEmpty, "点添加栏与首行之间的 8 点顶垫不得选中队列行，实际 \(log.selected)")
+        for y: CGFloat in [40, 44, 46] {
+            log.selected.removeAll()
+            click(window, topY: y)
+            precondition(log.selected.isEmpty, "添加栏 y=\(y) 不得选中队列行，实际 \(log.selected)")
+        }
 
+        log.selected.removeAll()
+        click(window, topY: 48)
+        precondition(log.selected == [0], "y=48 起应选中第 1 行，实际 \(log.selected)")
+
+        log.selected.removeAll()
         click(window, topY: 90)
         precondition(log.selected == [0], "点视觉第 1 行应选中第 1 行，实际 \(log.selected)")
 

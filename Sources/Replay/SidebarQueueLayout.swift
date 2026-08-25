@@ -9,23 +9,59 @@ enum SidebarQueueLayout {
     static let listBottomPadding: CGFloat = 12
     static let listHorizontalPadding: CGFloat = 9
     static let rowSpacing: CGFloat = 4
+    static let queueTopAnchorID = "queue-top"
 
-    static var listOriginY: CGFloat {
-        addBarHeight + dividerHeight + listTopPadding
+    /// 添加栏加分隔线的下沿。再往下才是列表，含 8 点顶垫。
+    static var addBarBottomY: CGFloat {
+        addBarHeight + dividerHeight
     }
 
-    /// 从窗口顶部往下的纵坐标映射到队列行。添加栏与标题栏区域返回 nil。
-    /// 生产路径仍由 SwiftUI 按钮命中；本函数是与画面共享的几何约定，供校验对照。
+    /// 首行画面起点：添加栏下沿加 8 点顶垫。queue-top 锚点不计入行距。
+    static var listOriginY: CGFloat {
+        addBarBottomY + listTopPadding
+    }
+
+    /// 从窗口顶部往下的纵坐标映射到队列行。
+    /// 添加栏内返回 nil。顶垫属于第 1 行的宽容命中（点击意图即第 1 行）。
     static func rowIndex(atWindowY y: CGFloat, rowHeight: CGFloat, rowCount: Int) -> Int? {
         guard rowHeight > 0, rowCount > 0 else { return nil }
-        let yInList = y - listOriginY
+        let yInList = y - addBarBottomY
         guard yInList >= 0 else { return nil }
+        if yInList < listTopPadding {
+            return 0
+        }
+        let yInRows = yInList - listTopPadding
         let stride = rowHeight + rowSpacing
-        let index = Int(yInList / stride)
+        let index = Int(yInRows / stride)
         guard index >= 0, index < rowCount else { return nil }
-        let offsetInRow = yInList - CGFloat(index) * stride
+        let offsetInRow = yInRows - CGFloat(index) * stride
         guard offsetInRow < rowHeight else { return nil }
         return index
+    }
+
+    /// 滚动锚点放在 LazyVStack 外面，零高占位不得再吃一行行距。
+    /// 8 点顶垫由首行按钮自己带上，这样顶垫既是画面边距也是第 1 行命中区。
+    struct ScrollStack<Content: View>: View {
+        @ViewBuilder var content: Content
+
+        var body: some View {
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(height: 0)
+                    .id(queueTopAnchorID)
+                content
+                    .padding(.horizontal, listHorizontalPadding)
+                    .padding(.bottom, listBottomPadding)
+            }
+        }
+    }
+
+    /// 放进首行按钮内部，让 8 点顶垫可点。
+    struct FirstRowTopGutter: View {
+        var body: some View {
+            Color.clear
+                .frame(height: listTopPadding)
+        }
     }
 }
 
