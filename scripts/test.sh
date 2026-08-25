@@ -44,6 +44,8 @@ compile_and_run playback_command \
 
 compile_and_run activation_click \
     "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/Sources/Replay/PlaybackKeyboardRouting.swift" \
+    "$project_dir/Sources/Replay/PlaybackWindowFocusController.swift" \
     "$project_dir/Sources/Replay/VisualStyle.swift" \
     "$project_dir/tools/activation_click_check.swift"
 
@@ -64,3 +66,8 @@ compile_and_run queue_row_meta \
 compile_and_run side_pane_selection \
     "$project_dir/Sources/Replay/SidePaneSelection.swift" \
     "$project_dir/tools/side_pane_selection_check.swift"
+
+compile_and_run keyboard_routing \
+    "$project_dir/Sources/Replay/PlaybackKeyboardRouting.swift" \
+    "$project_dir/Sources/Replay/PlaybackWindowFocusController.swift" \
+    "$project_dir/tools/keyboard_routing_check.swift"

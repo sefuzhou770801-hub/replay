@@ -65,10 +65,21 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: store.intakeNotice?.id)
         .onAppear {
+            isURLFieldFocused = false
             if detailSelection == nil { detailSelection = store.selection }
             knownItemIDs = Set(store.items.map(\.id))
             consumePendingURLs()
             consumePendingClipboardValues()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .replayTextFocusShouldResign)) { _ in
+            isURLFieldFocused = false
+        }
+        .onChange(of: isURLFieldFocused) { focused in
+            guard focused else { return }
+            let allowed = PlaybackWindowFocusController.attached(to: NSApp.keyWindow)?.allowTextFocus ?? true
+            if !allowed {
+                isURLFieldFocused = false
+            }
         }
         .onDisappear { detailSelectionTask?.cancel() }
         .onChange(of: store.selection) { selectedID in
@@ -333,7 +344,7 @@ struct ContentView: View {
     private func dismissURLFieldFocus() {
         guard isURLFieldFocused else { return }
         isURLFieldFocused = false
-        NSApp.keyWindow?.makeFirstResponder(nil)
+        PlaybackWindowFocusController.resign(in: NSApp.keyWindow)
     }
 }
 
@@ -2301,7 +2312,7 @@ private struct DropAndAddBar: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous)
-                .strokeBorder(isDropTarget ? OpenMyChrome.ink.opacity(0.35) : OpenMyChrome.fieldBorder)
+                .strokeBorder(urlFieldStroke, lineWidth: isURLFieldFocused.wrappedValue ? 2 : 1)
         }
         .background {
             GeometryReader { geometry in
@@ -2314,9 +2325,19 @@ private struct DropAndAddBar: View {
         .onDrop(of: [UTType.url, UTType.fileURL, UTType.plainText], isTargeted: $isDropTarget, perform: receiveProviders)
     }
 
+    private var urlFieldStroke: Color {
+        if isURLFieldFocused.wrappedValue {
+            return OpenMyChrome.ink
+        }
+        if isDropTarget {
+            return OpenMyChrome.ink.opacity(0.35)
+        }
+        return OpenMyChrome.fieldBorder
+    }
+
     private func removeFocus() {
         isURLFieldFocused.wrappedValue = false
-        NSApp.keyWindow?.makeFirstResponder(nil)
+        PlaybackWindowFocusController.resign(in: NSApp.keyWindow)
     }
 }
 

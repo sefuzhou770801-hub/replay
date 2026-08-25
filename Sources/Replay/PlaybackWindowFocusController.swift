@@ -1,0 +1,170 @@
+import AppKit
+
+extension Notification.Name {
+    static let replayTextFocusShouldResign = Notification.Name("ReplayTextFocusShouldResign")
+}
+
+/// 窗口层焦点闸门：启动时不把键盘交给链接输入框，点击输入框以外立即失焦。
+/// SwiftUI 手势覆盖不到 AppKit 视频面和控制按钮，所以用窗口级鼠标监听。
+final class PlaybackWindowFocusController {
+    private static let byWindow = NSMapTable<NSWindow, PlaybackWindowFocusController>.weakToStrongObjects()
+
+    private weak var window: NSWindow?
+    private var mouseMonitor: Any?
+    private var keyWindowObserver: NSObjectProtocol?
+    private(set) var allowTextFocus = false
+
+    static func attached(to window: NSWindow?) -> PlaybackWindowFocusController? {
+        guard let window else { return nil }
+        return byWindow.object(forKey: window)
+    }
+
+    static func resign(in window: NSWindow?) {
+        if let controller = attached(to: window) {
+            controller.resignTextFocus()
+            return
+        }
+        window?.makeFirstResponder(nil)
+        NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
+    }
+
+    var isUserEditingText: Bool {
+        allowTextFocus && PlaybackKeyboardRouting.isEditingText(in: window)
+    }
+
+    func attach(to window: NSWindow) {
+        guard self.window !== window else { return }
+        detach()
+        self.window = window
+        Self.byWindow.setObject(self, forKey: window)
+        window.initialFirstResponder = window.contentView
+        window.makeFirstResponder(nil)
+        installMouseMonitor()
+        installKeyWindowObserver()
+        rejectUnsolicitedTextFocus()
+        scheduleInitialFocusClear(in: window)
+    }
+
+    func detach() {
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
+            self.mouseMonitor = nil
+        }
+        if let keyWindowObserver {
+            NotificationCenter.default.removeObserver(keyWindowObserver)
+            self.keyWindowObserver = nil
+        }
+        if let window {
+            Self.byWindow.removeObject(forKey: window)
+        }
+        window = nil
+        allowTextFocus = false
+    }
+
+    func resignTextFocus() {
+        guard let window else { return }
+        clearTextFocus(in: window)
+    }
+
+    @discardableResult
+    func rejectUnsolicitedTextFocus() -> Bool {
+        guard let window, !allowTextFocus else { return false }
+        guard PlaybackKeyboardRouting.isEditingText(in: window) else { return false }
+        clearTextFocus(in: window)
+        return true
+    }
+
+    private func scheduleInitialFocusClear(in window: NSWindow) {
+        for delay in [0.0, 0.05, 0.15, 0.3, 0.75] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak window] in
+                guard let self, let window, self.window === window else { return }
+                self.rejectUnsolicitedTextFocus()
+            }
+        }
+    }
+
+    private func installKeyWindowObserver() {
+        guard let window else { return }
+        keyWindowObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            self?.rejectUnsolicitedTextFocus()
+        }
+    }
+
+    private func installMouseMonitor() {
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+            [weak self] event in
+            self?.handleMouseDown(event)
+            return event
+        }
+    }
+
+    private func handleMouseDown(_ event: NSEvent) {
+        guard let window else { return }
+        if event.window === window, clickHitsEditableText(event) {
+            allowTextFocus = true
+            return
+        }
+
+        allowTextFocus = false
+        if PlaybackKeyboardRouting.isEditingText(in: window) {
+            clearTextFocus(in: window)
+        }
+        // SwiftUI @FocusState 可能在下一拍把输入框焦点抢回来，再清一次。
+        DispatchQueue.main.async { [weak self] in
+            self?.rejectUnsolicitedTextFocus()
+        }
+    }
+
+    private func clickHitsEditableText(_ event: NSEvent) -> Bool {
+        guard let window = event.window else { return false }
+        let location = event.locationInWindow
+
+        if let textView = window.firstResponder as? NSTextView, textView.isEditable {
+            let rect = textView.convert(textView.bounds, to: nil)
+            if rect.contains(location) {
+                return true
+            }
+        }
+
+        let root = window.contentView?.superview ?? window.contentView
+        guard let root else { return false }
+        if ancestorIsEditableText(root.hitTest(location)) {
+            return true
+        }
+        return viewTreeContainsEditableField(root, containing: location)
+    }
+
+    private func ancestorIsEditableText(_ view: NSView?) -> Bool {
+        var current = view
+        while let view = current {
+            if PlaybackKeyboardRouting.isEditableTextSurface(view) {
+                return true
+            }
+            current = view.superview
+        }
+        return false
+    }
+
+    private func viewTreeContainsEditableField(_ view: NSView, containing location: NSPoint) -> Bool {
+        if PlaybackKeyboardRouting.isEditableTextSurface(view),
+           view.convert(view.bounds, to: nil).contains(location) {
+            return true
+        }
+        for subview in view.subviews {
+            if viewTreeContainsEditableField(subview, containing: location) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func clearTextFocus(in window: NSWindow) {
+        allowTextFocus = false
+        window.makeFirstResponder(nil)
+        NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
+    }
+}
