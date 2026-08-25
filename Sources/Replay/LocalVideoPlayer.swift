@@ -1040,7 +1040,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
         private let onVolumeChange: (Double) -> Void
         private let onEnded: () -> Void
         private var lastSeekRequestID: UUID?
-        private var pendingSeekTime: Double?
+        private var seekSession = SubtitleSeekSession()
         private var commandToken: UUID?
         private var preferredRate: Double = 1
         private var currentTitle = ""
@@ -1075,7 +1075,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
             currentAuthor = author
             reachedEnd = false
             lastSeekRequestID = nil
-            pendingSeekTime = nil
+            seekSession.invalidate()
             preferredRate = PlaybackRatePreference.load()
             let playerItem = AVPlayerItem(url: url)
             playerItem.audioTimePitchAlgorithm = PlaybackAudioPolicy.timePitchAlgorithm
@@ -1194,14 +1194,17 @@ struct LocalVideoPlayer: NSViewRepresentable {
         }
 
         private func beginSeek(player: AVPlayer, to seekTime: Double, shouldPlay: Bool) {
-            pendingSeekTime = seekTime
+            let requestID = seekSession.issue(time: seekTime)
             publishSubtitle(at: seekTime, animated: false)
             let time = CMTime(seconds: seekTime, preferredTimescale: 600)
-            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-                if shouldPlay { self?.startPlayback(player) }
-                self?.pendingSeekTime = nil
-                self?.publishSnapshot()
-                self?.publishSubtitle(at: seekTime, animated: false)
+            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+                guard let self,
+                      self.seekSession.complete(id: requestID, finished: finished) != nil else {
+                    return
+                }
+                if shouldPlay { self.startPlayback(player) }
+                self.publishSnapshot()
+                self.publishSubtitle(at: seekTime, animated: false)
             }
         }
 
@@ -1661,7 +1664,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
 
         private func subtitleClockTime(playerTime: Double) -> Double {
             SubtitleDispatchPolicy.visibleTime(
-                pendingSeekTime: pendingSeekTime,
+                pendingSeekTime: seekSession.pendingTime,
                 playerTime: playerTime
             )
         }
@@ -1743,7 +1746,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 PlaybackCommandCenter.shared.unregister(commandToken)
             }
             commandToken = nil
-            pendingSeekTime = nil
+            seekSession.invalidate()
             playerView?.setSubtitlePresentation(nil, animated: false)
             playerView?.playerLayer.player = nil
             playerView?.onVolumeScroll = nil

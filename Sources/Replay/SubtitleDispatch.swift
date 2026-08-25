@@ -35,3 +35,33 @@ enum SubtitleDispatchPolicy {
         return 0
     }
 }
+
+/// 跟踪进行中的 seek：只有最新请求且 finished 为真才提交，过期回调直接丢弃。
+struct SubtitleSeekSession: Equatable {
+    private(set) var latestID: UInt64 = 0
+    private(set) var pendingTime: Double?
+
+    static func shouldCommit(callbackID: UInt64, latestID: UInt64, finished: Bool) -> Bool {
+        finished && callbackID == latestID
+    }
+
+    mutating func issue(time: Double) -> UInt64 {
+        latestID += 1
+        pendingTime = time
+        return latestID
+    }
+
+    mutating func invalidate() {
+        latestID += 1
+        pendingTime = nil
+    }
+
+    mutating func complete(id: UInt64, finished: Bool) -> Double? {
+        guard Self.shouldCommit(callbackID: id, latestID: latestID, finished: finished) else {
+            return nil
+        }
+        let time = pendingTime
+        pendingTime = nil
+        return time
+    }
+}

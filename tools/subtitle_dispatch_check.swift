@@ -82,6 +82,56 @@ struct SubtitleDispatchCheck {
         precondition(SubtitleDispatchPolicy.visibleTime(pendingSeekTime: nil, playerTime: 3) == 3)
         precondition(SubtitleDispatchPolicy.visibleTime(pendingSeekTime: .nan, playerTime: 3) == 3)
 
+        precondition(
+            !SubtitleSeekSession.shouldCommit(callbackID: 1, latestID: 2, finished: false),
+            "被取消的旧回调不得提交"
+        )
+        precondition(
+            !SubtitleSeekSession.shouldCommit(callbackID: 1, latestID: 2, finished: true),
+            "过期回调即使 finished 为真也不得提交"
+        )
+        precondition(
+            !SubtitleSeekSession.shouldCommit(callbackID: 2, latestID: 2, finished: false),
+            "最新请求被取消时也不得提交"
+        )
+        precondition(SubtitleSeekSession.shouldCommit(callbackID: 2, latestID: 2, finished: true))
+
+        var lateOld = SubtitleSeekSession()
+        let cueA = lateOld.issue(time: 10)
+        let cueB = lateOld.issue(time: 20)
+        precondition(lateOld.pendingTime == 20)
+        precondition(
+            SubtitleDispatchPolicy.visibleTime(pendingSeekTime: lateOld.pendingTime, playerTime: 3) == 20
+        )
+        precondition(
+            lateOld.complete(id: cueA, finished: false) == nil,
+            "旧回调后到且 finished=NO 时必须丢弃，不得清掉 B 的待定时间"
+        )
+        precondition(lateOld.pendingTime == 20, "旧回调不得把待定时间改回 A")
+        precondition(lateOld.complete(id: cueB, finished: true) == 20)
+        precondition(lateOld.pendingTime == nil)
+
+        var outOfOrder = SubtitleSeekSession()
+        let first = outOfOrder.issue(time: 10)
+        let second = outOfOrder.issue(time: 20)
+        precondition(outOfOrder.complete(id: second, finished: true) == 20)
+        precondition(outOfOrder.pendingTime == nil)
+        precondition(
+            outOfOrder.complete(id: first, finished: true) == nil,
+            "乱序完成时后到的 A 回调不得覆盖已生效的 B"
+        )
+        precondition(outOfOrder.pendingTime == nil)
+
+        var cancelledLatest = SubtitleSeekSession()
+        _ = cancelledLatest.issue(time: 10)
+        let replacement = cancelledLatest.issue(time: 20)
+        cancelledLatest.invalidate()
+        precondition(
+            cancelledLatest.complete(id: replacement, finished: true) == nil,
+            "换片或停止后，进行中的 seek 回调必须作废"
+        )
+        precondition(cancelledLatest.pendingTime == nil)
+
         print("subtitle_dispatch_check=passed")
     }
 }
