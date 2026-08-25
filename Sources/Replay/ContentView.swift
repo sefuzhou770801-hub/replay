@@ -116,31 +116,19 @@ struct ContentView: View {
     }
 
     private var sidebar: some View {
-        ZStack(alignment: .topLeading) {
-            OpenMyChrome.canvas
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                DropAndAddBar(
-                    urlText: $urlText,
-                    isDropTarget: $isDropTarget,
-                    isURLFieldFocused: $isURLFieldFocused,
-                    submit: submitURL,
-                    receiveProviders: receiveProviders
-                )
-                .padding(.leading, 82)
-                .padding(.trailing, 54)
-                // NavigationSplitView supplies the native title-bar inset. Keep
-                // the add field in the unshifted center of that header so it
-                // shares a baseline with the traffic-light cluster.
-                .frame(height: 46)
-
-                Divider()
-
-                queueList
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .ignoresSafeArea(.container, edges: .top)
+        SidebarQueueChrome {
+            DropAndAddBar(
+                urlText: $urlText,
+                isDropTarget: $isDropTarget,
+                isURLFieldFocused: $isURLFieldFocused,
+                submit: submitURL,
+                receiveProviders: receiveProviders
+            )
+            // 红绿灯在左、系统侧栏钮在右。添加栏停在标题栏正中，避开两侧控件。
+            .padding(.leading, 82)
+            .padding(.trailing, 54)
+        } content: {
+            queueList
         }
     }
 
@@ -155,7 +143,7 @@ struct ContentView: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: 4, pinnedViews: [.sectionHeaders]) {
+                    LazyVStack(alignment: .leading, spacing: SidebarQueueLayout.rowSpacing, pinnedViews: [.sectionHeaders]) {
                         Color.clear
                             .frame(height: 0)
                             .id("queue-top")
@@ -197,9 +185,9 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 9)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, SidebarQueueLayout.listHorizontalPadding)
+                    .padding(.top, SidebarQueueLayout.listTopPadding)
+                    .padding(.bottom, SidebarQueueLayout.listBottomPadding)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .scrollIndicators(.hidden)

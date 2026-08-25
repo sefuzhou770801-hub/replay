@@ -86,3 +86,8 @@ compile_and_run keyboard_routing \
     "$project_dir/Sources/Replay/PlaybackKeyboardRouting.swift" \
     "$project_dir/Sources/Replay/PlaybackWindowFocusController.swift" \
     "$project_dir/tools/keyboard_routing_check.swift"
+
+compile_and_run sidebar_hittest \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/Sources/Replay/SidebarQueueLayout.swift" \
+    "$project_dir/tools/sidebar_hittest_check.swift"

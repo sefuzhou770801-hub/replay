@@ -1,0 +1,87 @@
+import AppKit
+import SwiftUI
+
+/// 侧栏队列的几何约定：添加栏占标题栏区域，列表从栏下开始，不再叠加系统标题栏内边距。
+enum SidebarQueueLayout {
+    static let addBarHeight: CGFloat = 46
+    static let dividerHeight: CGFloat = 1
+    static let listTopPadding: CGFloat = 8
+    static let listBottomPadding: CGFloat = 12
+    static let listHorizontalPadding: CGFloat = 9
+    static let rowSpacing: CGFloat = 4
+
+    static var listOriginY: CGFloat {
+        addBarHeight + dividerHeight + listTopPadding
+    }
+
+    /// 从窗口顶部往下的纵坐标映射到队列行。添加栏与标题栏区域返回 nil。
+    /// 生产路径仍由 SwiftUI 按钮命中；本函数是与画面共享的几何约定，供校验对照。
+    static func rowIndex(atWindowY y: CGFloat, rowHeight: CGFloat, rowCount: Int) -> Int? {
+        guard rowHeight > 0, rowCount > 0 else { return nil }
+        let yInList = y - listOriginY
+        guard yInList >= 0 else { return nil }
+        let stride = rowHeight + rowSpacing
+        let index = Int(yInList / stride)
+        guard index >= 0, index < rowCount else { return nil }
+        let offsetInRow = yInList - CGFloat(index) * stride
+        guard offsetInRow < rowHeight else { return nil }
+        return index
+    }
+}
+
+/// 嵌套宿主上报零安全区，避免队列 ScrollView 再继承标题栏 contentInsets。
+/// 该内边距会把画面下推，而 SwiftUI 按钮命中仍停在未内缩的坐标。
+final class SidebarQueueHostingView<Content: View>: NSHostingView<Content> {
+    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsets() }
+}
+
+struct SidebarQueueSafeAreaHost<Content: View>: NSViewRepresentable {
+    var content: Content
+
+    func makeNSView(context: Context) -> SidebarQueueHostingView<Content> {
+        let view = SidebarQueueHostingView(rootView: content)
+        // 嵌套 NSHostingView 不继承外层 WindowGroup 的配色，须在这一层补回。
+        view.appearance = NSAppearance(named: .darkAqua)
+        return view
+    }
+
+    func updateNSView(_ view: SidebarQueueHostingView<Content>, context: Context) {
+        view.rootView = content
+    }
+}
+
+struct SidebarQueueChrome<Header: View, Content: View>: View {
+    var header: Header
+    var content: Content
+
+    init(
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.header = header()
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            OpenMyChrome.canvas
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                header
+                    .frame(height: SidebarQueueLayout.addBarHeight)
+
+                Divider()
+
+                SidebarQueueSafeAreaHost(
+                    content: content
+                        .preferredColorScheme(.dark)
+                        .tint(OpenMyChrome.ink)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea(.container, edges: .top)
+        }
+    }
+}
