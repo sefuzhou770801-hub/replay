@@ -116,31 +116,19 @@ struct ContentView: View {
     }
 
     private var sidebar: some View {
-        ZStack(alignment: .topLeading) {
-            OpenMyChrome.canvas
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                DropAndAddBar(
-                    urlText: $urlText,
-                    isDropTarget: $isDropTarget,
-                    isURLFieldFocused: $isURLFieldFocused,
-                    submit: submitURL,
-                    receiveProviders: receiveProviders
-                )
-                .padding(.leading, 82)
-                .padding(.trailing, 54)
-                // NavigationSplitView supplies the native title-bar inset. Keep
-                // the add field in the unshifted center of that header so it
-                // shares a baseline with the traffic-light cluster.
-                .frame(height: 46)
-
-                Divider()
-
-                queueList
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .ignoresSafeArea(.container, edges: .top)
+        SidebarQueueChrome {
+            DropAndAddBar(
+                urlText: $urlText,
+                isDropTarget: $isDropTarget,
+                isURLFieldFocused: $isURLFieldFocused,
+                submit: submitURL,
+                receiveProviders: receiveProviders
+            )
+            // 红绿灯在左、系统侧栏钮在右。添加栏停在标题栏正中，避开两侧控件。
+            .padding(.leading, 82)
+            .padding(.trailing, 54)
+        } content: {
+            queueList
         }
     }
 
@@ -155,51 +143,53 @@ struct ContentView: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    LazyVStack(alignment: .leading, spacing: 4, pinnedViews: [.sectionHeaders]) {
-                        Color.clear
-                            .frame(height: 0)
-                            .id("queue-top")
-
-                        if !queueItems.isEmpty {
-                            ForEach(queueItems) { item in
-                                sidebarRow(item)
-                                    .background {
-                                        GeometryReader { geometry in
-                                            Color.clear.preference(
-                                                key: QueueRowFramePreferenceKey.self,
-                                                value: [item.id: geometry.frame(in: .named("queue-list"))]
-                                            )
-                                        }
-                                    }
-                                    .simultaneousGesture(
-                                        DragGesture(
-                                            minimumDistance: QueueRowMeta.reorderDragThreshold,
-                                            coordinateSpace: .named("queue-list")
-                                        )
-                                        .onChanged { updateQueueDrag(item.id, at: $0.location) }
+                    SidebarQueueLayout.ScrollStack {
+                        LazyVStack(alignment: .leading, spacing: SidebarQueueLayout.rowSpacing, pinnedViews: [.sectionHeaders]) {
+                            if !queueItems.isEmpty {
+                                ForEach(queueItems) { item in
+                                    sidebarRow(
+                                        item,
+                                        includesListTopGutter: item.id == queueItems.first?.id
                                     )
-                            }
-                        }
-
-                        if !archivedItems.isEmpty {
-                            Section {
-                                ForEach(archivedItems) { item in
-                                    sidebarRow(item)
+                                        .background {
+                                            GeometryReader { geometry in
+                                                Color.clear.preference(
+                                                    key: QueueRowFramePreferenceKey.self,
+                                                    value: [item.id: geometry.frame(in: .named("queue-list"))]
+                                                )
+                                            }
+                                        }
+                                        .simultaneousGesture(
+                                            DragGesture(
+                                                minimumDistance: QueueRowMeta.reorderDragThreshold,
+                                                coordinateSpace: .named("queue-list")
+                                            )
+                                            .onChanged { updateQueueDrag(item.id, at: $0.location) }
+                                        )
                                 }
-                            } header: {
-                                SidebarSectionHeader(
-                                    title: "已看",
-                                    count: archivedItems.count,
-                                    systemImage: "checkmark.circle"
-                                )
-                                .padding(.top, queueItems.isEmpty ? 0 : 10)
+                            }
+
+                            if !archivedItems.isEmpty {
+                                Section {
+                                    ForEach(archivedItems) { item in
+                                        sidebarRow(
+                                            item,
+                                            includesListTopGutter: queueItems.isEmpty
+                                                && item.id == archivedItems.first?.id
+                                        )
+                                    }
+                                } header: {
+                                    SidebarSectionHeader(
+                                        title: "已看",
+                                        count: archivedItems.count,
+                                        systemImage: "checkmark.circle"
+                                    )
+                                    .padding(.top, queueItems.isEmpty ? 0 : 10)
+                                }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 9)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .scrollIndicators(.hidden)
@@ -220,17 +210,18 @@ struct ContentView: View {
                     // after every launch, with the normal eight-point inset
                     // above the newest item.
                     DispatchQueue.main.async {
-                        proxy.scrollTo("queue-top", anchor: .top)
+                        proxy.scrollTo(SidebarQueueLayout.queueTopAnchorID, anchor: .top)
                     }
                 }
             }
         }
     }
 
-    private func sidebarRow(_ item: WatchItem) -> some View {
+    private func sidebarRow(_ item: WatchItem, includesListTopGutter: Bool = false) -> some View {
         QueueRow(
             item: item,
             isSelected: store.selection == item.id,
+            includesListTopGutter: includesListTopGutter,
             select: {
                 store.selection = item.id
                 detailSelection = item.id
@@ -405,6 +396,7 @@ private struct IntakeToast: View {
 private struct QueueRow: View, Equatable {
     let item: WatchItem
     let isSelected: Bool
+    let includesListTopGutter: Bool
     let select: () -> Void
     let rename: (String) -> Void
     @State private var isEditingTitle = false
@@ -413,19 +405,21 @@ private struct QueueRow: View, Equatable {
     @FocusState private var isTitleFocused: Bool
 
     static func == (lhs: QueueRow, rhs: QueueRow) -> Bool {
-        lhs.item == rhs.item && lhs.isSelected == rhs.isSelected
+        lhs.item == rhs.item
+            && lhs.isSelected == rhs.isSelected
+            && lhs.includesListTopGutter == rhs.includesListTopGutter
     }
 
     var body: some View {
         Group {
             if isEditingTitle {
-                rowContent
+                buttonLabel
                     .background {
                         rowChrome(pressed: false)
                     }
             } else {
                 Button(action: handleRowAction) {
-                    rowContent
+                    buttonLabel
                 }
                 .buttonStyle(QueueRowButtonStyle(isSelected: isSelected, isHovering: isHovering))
             }
@@ -442,6 +436,16 @@ private struct QueueRow: View, Equatable {
             return
         }
         select()
+    }
+
+    private var buttonLabel: some View {
+        VStack(spacing: 0) {
+            if includesListTopGutter {
+                SidebarQueueLayout.FirstRowTopGutter()
+            }
+            rowContent
+        }
+        .contentShape(Rectangle())
     }
 
     private var rowContent: some View {
