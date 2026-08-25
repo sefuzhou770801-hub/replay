@@ -778,8 +778,7 @@ private struct VideoDetail: View {
     @State private var seekRequest: PlayerSeekRequest?
     @State private var playback = PlaybackSnapshot.empty
     @State private var subtitleTrack: VideoSubtitleTrack?
-    @State private var isPlayerPrepared = false
-    @State private var playerPreparationTask: Task<Void, Never>?
+    @State private var userHasManuallySwitchedSidePane = false
     @State private var subtitleLoadTask: Task<Void, Never>?
     @State private var volumeHUDValue = PlaybackVolumePreference.load()
     @State private var volumeHUDVisible = false
@@ -790,40 +789,39 @@ private struct VideoDetail: View {
     let collapseSidebar: () -> Void
 
     var body: some View {
-        detailBody
-            .navigationTitle("")
-    }
-
-    private var detailBody: some View {
-        chapterLayout
-            .onAppear {
-                sidePaneModeRaw = SidePaneSelection.openingMode(hasChapters: !item.availableChapters.isEmpty).rawValue
-                preparePlayerAfterSelection()
-                // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
-                store.rescanLocalSubtitle(for: item.id) { path in
-                    loadSubtitles(path: path)
-                }
-                collapseSidebarForNarrowChapterLayoutIfNeeded()
+        Group {
+            chapterLayout
+        }
+        .navigationTitle("")
+        .onAppear {
+            userHasManuallySwitchedSidePane = false
+            applyOpeningSidePaneMode()
+            // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
+            store.rescanLocalSubtitle(for: item.id) { path in
+                loadSubtitles(path: path)
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-                store.rescanLocalSubtitle(for: item.id) { path in
-                    loadSubtitles(path: path)
-                }
+            collapseSidebarForNarrowChapterLayoutIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            store.rescanLocalSubtitle(for: item.id) { path in
+                loadSubtitles(path: path)
             }
-            .onDisappear {
-                playerPreparationTask?.cancel()
-                subtitleLoadTask?.cancel()
-                volumeHUDDismissalTask?.cancel()
+        }
+        .onDisappear {
+            subtitleLoadTask?.cancel()
+            volumeHUDDismissalTask?.cancel()
+        }
+        .onChange(of: item.availableChapters.isEmpty) { isEmpty in
+            recomputeSidePaneMode(hasChapters: !isEmpty)
+        }
+        .onChange(of: item.subtitleFilePath) { newPath in loadSubtitles(path: newPath) }
+        .onChange(of: windowWidth) { _ in collapseSidebarForNarrowChapterLayoutIfNeeded() }
+        .onChange(of: sidebarCollapsed) { isCollapsed in
+            guard !isCollapsed, prefersOneSidePane, chaptersPresented else { return }
+            withAnimation(.easeInOut(duration: 0.22)) {
+                chaptersPresented = false
             }
-            .onChange(of: item.localFilePath) { _ in preparePlayerAfterSelection() }
-            .onChange(of: item.subtitleFilePath) { newPath in loadSubtitles(path: newPath) }
-            .onChange(of: windowWidth) { _ in collapseSidebarForNarrowChapterLayoutIfNeeded() }
-            .onChange(of: sidebarCollapsed) { isCollapsed in
-                guard !isCollapsed, prefersOneSidePane, chaptersPresented else { return }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    chaptersPresented = false
-                }
-            }
+        }
     }
 
     private var usesCompactToolbarActions: Bool {
@@ -947,7 +945,7 @@ private struct VideoDetail: View {
                 PlayerStageLayout {
                     playerSurface
 
-                    if item.localFileURL != nil, item.state == .ready, isPlayerPrepared {
+                    if isItemPlayable {
                         PlaybackControls(
                             snapshot: playback,
                             knownDuration: item.duration,
@@ -980,7 +978,8 @@ private struct VideoDetail: View {
             isPresented: chaptersPresented,
             toggle: toggleChapters,
             selectChapter: seekToChapter,
-            selectCueTime: seekToTime
+            selectCueTime: seekToTime,
+            onUserPickedMode: { userHasManuallySwitchedSidePane = true }
         )
         .ignoresSafeArea(.container, edges: .top)
     }
@@ -988,27 +987,23 @@ private struct VideoDetail: View {
     private var playerSurface: some View {
         ZStack(alignment: .bottom) {
             Group {
-                if let fileURL = item.localFileURL, item.state == .ready {
-                    if isPlayerPrepared {
-                        GeometryReader { geometry in
-                            LocalVideoPlayer(
-                                url: fileURL,
-                                title: item.title,
-                                author: item.author,
-                                resumeAt: item.resumablePosition,
-                                seekRequest: seekRequest,
-                                subtitleTrack: subtitleTrack,
-                                subtitlesEnabled: subtitlesEnabled,
-                                onProgress: { store.updatePlaybackPosition($0, for: item.id) },
-                                onStateChange: { playback = $0 },
-                                onVolumeChange: showVolumeHUD,
-                                onEnded: { store.markWatched(item.id) }
-                            )
-                            .id(fileURL)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                        }
-                    } else {
-                        playerLoadingState
+                if isItemPlayable, let fileURL = displayedItem.localFileURL {
+                    GeometryReader { geometry in
+                        LocalVideoPlayer(
+                            url: fileURL,
+                            title: item.title,
+                            author: item.author,
+                            resumeAt: item.resumablePosition,
+                            seekRequest: seekRequest,
+                            subtitleTrack: subtitleTrack,
+                            subtitlesEnabled: subtitlesEnabled,
+                            onProgress: { store.updatePlaybackPosition($0, for: item.id) },
+                            onStateChange: { playback = $0 },
+                            onVolumeChange: showVolumeHUD,
+                            onEnded: { store.markWatched(item.id) }
+                        )
+                        .id(fileURL)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                     }
                 } else {
                     downloadState
@@ -1034,14 +1029,33 @@ private struct VideoDetail: View {
         }
     }
 
-    private func preparePlayerAfterSelection() {
-        playerPreparationTask?.cancel()
-        isPlayerPrepared = false
-        guard item.state == .ready, item.localFileURL != nil else { return }
-        playerPreparationTask = Task {
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            isPlayerPrepared = true
+    /// 直接读队列当前值，不靠 `let item` 的 onChange 边沿。
+    private var displayedItem: WatchItem {
+        store.items.first(where: { $0.id == item.id }) ?? item
+    }
+
+    private var isItemPlayable: Bool {
+        PlayerReadyDecision.isPlayable(
+            state: displayedItem.state,
+            localFileExists: displayedItem.localFileURL != nil
+        )
+    }
+
+    private func applyOpeningSidePaneMode() {
+        sidePaneModeRaw = SidePaneSelection.openingMode(
+            hasChapters: !item.availableChapters.isEmpty
+        ).rawValue
+    }
+
+    private func recomputeSidePaneMode(hasChapters: Bool) {
+        let current = SidePaneMode(rawValue: sidePaneModeRaw) ?? .chapters
+        let next = SidePaneSelection.recomputedMode(
+            current: current,
+            hasChapters: hasChapters,
+            userHasManuallySwitched: userHasManuallySwitchedSidePane
+        )
+        if next != current {
+            sidePaneModeRaw = next.rawValue
         }
     }
 
@@ -1086,21 +1100,6 @@ private struct VideoDetail: View {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? nil
             : .easeOut(duration: 0.15)
-    }
-
-    private var playerLoadingState: some View {
-        ZStack {
-            if let image = ThumbnailImageCache.image(for: item.thumbnailFileURL) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .opacity(0.42)
-            }
-            Color.black.opacity(0.36)
-            ProgressView()
-                .controlSize(.large)
-                .tint(.white)
-        }
     }
 
     @ViewBuilder
@@ -1792,6 +1791,7 @@ private struct ChapterSidebar: View {
     let toggle: () -> Void
     let selectChapter: (VideoChapter) -> Void
     let selectCueTime: (Double) -> Void
+    let onUserPickedMode: () -> Void
 
     /// 持久化视图选择：章节列表 / 歌词轴。
     @AppStorage("sidePaneMode") private var sidePaneModeRaw = SidePaneMode.chapters.rawValue
@@ -1904,6 +1904,7 @@ private struct ChapterSidebar: View {
     private func modeButton(title: String, mode: SidePaneMode) -> some View {
         let isSelected = effectiveMode == mode
         return Button {
+            onUserPickedMode()
             sidePaneModeRaw = mode.rawValue
         } label: {
             Text(title)
