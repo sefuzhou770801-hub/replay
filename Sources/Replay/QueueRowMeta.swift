@@ -41,4 +41,75 @@ enum QueueRowMeta {
         guard let path, !path.isEmpty, exists(path) else { return nil }
         return path
     }
+
+    enum ContextMenuItem: Equatable, Hashable {
+        case toggleWatched
+        case rename
+        case retryDownload
+        case openOriginal
+        case revealInFinder
+        case divider
+        case delete
+    }
+
+    enum TitleEditEndReason: Equatable {
+        case submit
+        case escape
+        case focusLost
+    }
+
+    enum TitleEditCommit: Equatable {
+        case save(String)
+        case discard
+    }
+
+    static func contextMenuItems(
+        isWatched _: Bool,
+        state: DownloadState,
+        canRevealLocalFile: Bool
+    ) -> [ContextMenuItem] {
+        var items: [ContextMenuItem] = [.toggleWatched, .rename]
+        if state == .failed {
+            items.append(.retryDownload)
+        }
+        items.append(.openOriginal)
+        if canRevealLocalFile {
+            items.append(.revealInFinder)
+        }
+        items.append(contentsOf: [.divider, .delete])
+        return items
+    }
+
+    static func visibleTitle(for item: ContextMenuItem, isWatched: Bool) -> String {
+        switch item {
+        case .toggleWatched:
+            return isWatched ? "移回队列" : "标记已看"
+        case .rename:
+            return "重命名"
+        case .retryDownload:
+            return "重试下载"
+        case .openOriginal:
+            return "打开原网页"
+        case .revealInFinder:
+            return "在访达中显示"
+        case .divider:
+            return ""
+        case .delete:
+            return "删除"
+        }
+    }
+
+    static func shouldBeginTitleEditing(isSelected: Bool, clickCount: Int) -> Bool {
+        isSelected && clickCount >= 2
+    }
+
+    static func titleEditCommit(reason: TitleEditEndReason, draft: String) -> TitleEditCommit {
+        switch reason {
+        case .escape:
+            return .discard
+        case .submit, .focusLost:
+            let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? .discard : .save(trimmed)
+        }
+    }
 }

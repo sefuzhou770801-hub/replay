@@ -4,6 +4,15 @@ extension Notification.Name {
     static let replayTextFocusShouldResign = Notification.Name("ReplayTextFocusShouldResign")
 }
 
+enum TextFocusResignReason: String {
+    case escape
+    case other
+
+    static let userInfoKey = "reason"
+    /// 在卸第一响应者之前写入，标题编辑用它判断 Esc 取消还是点走保存。
+    static var latest: TextFocusResignReason = .other
+}
+
 /// 窗口层焦点闸门：启动时不把键盘交给链接输入框，点击输入框以外立即失焦。
 /// SwiftUI 手势覆盖不到 AppKit 视频面和控制按钮，所以用窗口级鼠标监听。
 final class PlaybackWindowFocusController {
@@ -22,13 +31,22 @@ final class PlaybackWindowFocusController {
         return byWindow.object(forKey: window)
     }
 
-    static func resign(in window: NSWindow?) {
+    static func resign(in window: NSWindow?, reason: TextFocusResignReason = .other) {
         if let controller = attached(to: window) {
-            controller.resignTextFocus()
+            controller.resignTextFocus(reason: reason)
             return
         }
+        postResignNotification(window: window, reason: reason)
         window?.makeFirstResponder(nil)
-        NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
+    }
+
+    private static func postResignNotification(window: NSWindow?, reason: TextFocusResignReason) {
+        TextFocusResignReason.latest = reason
+        NotificationCenter.default.post(
+            name: .replayTextFocusShouldResign,
+            object: window,
+            userInfo: [TextFocusResignReason.userInfoKey: reason.rawValue]
+        )
     }
 
     func setSwiftUITextFieldFocused(_ focused: Bool) {
@@ -68,9 +86,9 @@ final class PlaybackWindowFocusController {
         swiftUITextFieldFocused = false
     }
 
-    func resignTextFocus() {
+    func resignTextFocus(reason: TextFocusResignReason = .other) {
         guard let window else { return }
-        clearTextFocus(in: window)
+        clearTextFocus(in: window, reason: reason)
     }
 
     @discardableResult
@@ -118,7 +136,7 @@ final class PlaybackWindowFocusController {
 
         allowTextFocus = false
         if PlaybackKeyboardRouting.isEditingText(in: window) {
-            clearTextFocus(in: window)
+            clearTextFocus(in: window, reason: .other)
         }
         // SwiftUI @FocusState 可能在下一拍把输入框焦点抢回来，再清一次。
         DispatchQueue.main.async { [weak self] in
@@ -168,10 +186,11 @@ final class PlaybackWindowFocusController {
         return false
     }
 
-    private func clearTextFocus(in window: NSWindow) {
+    private func clearTextFocus(in window: NSWindow, reason: TextFocusResignReason = .other) {
         allowTextFocus = false
         swiftUITextFieldFocused = false
+        // 先广播原因，再卸第一响应者，避免标题编辑的失焦回调抢在 Esc 取消之前把草稿存掉。
+        Self.postResignNotification(window: window, reason: reason)
         window.makeFirstResponder(nil)
-        NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
     }
 }

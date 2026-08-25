@@ -16,6 +16,7 @@ struct KeyboardRoutingCheck {
         assertModifierCombinations()
         assertMissingPlayer()
         assertWindowFocusControllerClearsInitialResponder()
+        assertEscapeResignCarriesReason()
 
         print("keyboard_routing_check=passed")
     }
@@ -86,6 +87,50 @@ struct KeyboardRoutingCheck {
 
         controller.detach()
         window.close()
+    }
+
+    private static func assertEscapeResignCarriesReason() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        var reasons: [String] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: .replayTextFocusShouldResign,
+            object: window,
+            queue: nil
+        ) { notification in
+            if let raw = notification.userInfo?[TextFocusResignReason.userInfoKey] as? String {
+                reasons.append(raw)
+            }
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            window.close()
+        }
+
+        PlaybackWindowFocusController.resign(in: window, reason: .escape)
+        precondition(
+            reasons.last == TextFocusResignReason.escape.rawValue,
+            "Esc 失焦必须带上 escape 原因，标题编辑才能取消而不是保存"
+        )
+        precondition(
+            TextFocusResignReason.latest == .escape,
+            "Esc 原因必须在卸第一响应者之前就能读到"
+        )
+
+        PlaybackWindowFocusController.resign(in: window, reason: .other)
+        precondition(reasons.last == TextFocusResignReason.other.rawValue)
+        precondition(TextFocusResignReason.latest == .other)
+
+        let controller = PlaybackWindowFocusController()
+        controller.attach(to: window)
+        reasons.removeAll()
+        controller.resignTextFocus(reason: .escape)
+        precondition(reasons.last == TextFocusResignReason.escape.rawValue)
+        controller.detach()
     }
 
     private static func assertIdlePlaybackShortcuts() {

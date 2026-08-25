@@ -42,6 +42,73 @@ struct QueueRowMetaCheck {
             "拖拽阈值过小会把单击认成排序"
         )
 
+        let states: [DownloadState] = [.queued, .downloading, .ready, .failed]
+        for isWatched in [false, true] {
+            for state in states {
+                for canReveal in [false, true] {
+                    let items = QueueRowMeta.contextMenuItems(
+                        isWatched: isWatched,
+                        state: state,
+                        canRevealLocalFile: canReveal
+                    )
+                    precondition(
+                        items.contains(.rename),
+                        "任意队列行右键菜单都必须有重命名：watched=\(isWatched) state=\(state) reveal=\(canReveal)"
+                    )
+                    precondition(
+                        QueueRowMeta.visibleTitle(for: .rename, isWatched: isWatched) == "重命名"
+                    )
+                }
+            }
+        }
+
+        let failedMenu = QueueRowMeta.contextMenuItems(
+            isWatched: false,
+            state: .failed,
+            canRevealLocalFile: false
+        )
+        precondition(failedMenu == [
+            .toggleWatched, .rename, .retryDownload, .openOriginal, .divider, .delete
+        ])
+
+        let readyWithFile = QueueRowMeta.contextMenuItems(
+            isWatched: true,
+            state: .ready,
+            canRevealLocalFile: true
+        )
+        precondition(readyWithFile == [
+            .toggleWatched, .rename, .openOriginal, .revealInFinder, .divider, .delete
+        ])
+        precondition(QueueRowMeta.visibleTitle(for: .toggleWatched, isWatched: true) == "移回队列")
+        precondition(QueueRowMeta.visibleTitle(for: .toggleWatched, isWatched: false) == "标记已看")
+
+        precondition(QueueRowMeta.shouldBeginTitleEditing(isSelected: true, clickCount: 2))
+        precondition(QueueRowMeta.shouldBeginTitleEditing(isSelected: true, clickCount: 3))
+        precondition(!QueueRowMeta.shouldBeginTitleEditing(isSelected: true, clickCount: 1))
+        precondition(!QueueRowMeta.shouldBeginTitleEditing(isSelected: false, clickCount: 2))
+        precondition(!QueueRowMeta.shouldBeginTitleEditing(isSelected: false, clickCount: 1))
+
+        precondition(
+            QueueRowMeta.titleEditCommit(reason: .submit, draft: "  新标题  ") == .save("新标题")
+        )
+        precondition(
+            QueueRowMeta.titleEditCommit(reason: .submit, draft: "   ") == .discard,
+            "回车空名不得保存"
+        )
+        precondition(
+            QueueRowMeta.titleEditCommit(reason: .escape, draft: "改过的名字") == .discard,
+            "Esc 必须恢复原名，不保存"
+        )
+        precondition(
+            QueueRowMeta.titleEditCommit(reason: .escape, draft: "  新标题  ") == .discard
+        )
+        precondition(
+            QueueRowMeta.titleEditCommit(reason: .focusLost, draft: "  点走保存  ") == .save("点走保存")
+        )
+        precondition(
+            QueueRowMeta.titleEditCommit(reason: .focusLost, draft: " \n ") == .discard
+        )
+
         print("queue_row_meta_check=passed")
     }
 }
