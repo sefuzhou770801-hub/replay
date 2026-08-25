@@ -546,8 +546,8 @@ private struct QueueRow: View, Equatable {
 
                 HStack(spacing: 5) {
                     SourceBrandMark(sourceName: item.sourceName)
-                    if !statusText.isEmpty {
-                        Text(statusText)
+                    if !metaText.isEmpty {
+                        Text(metaText)
                             .lineLimit(1)
                     }
                 }
@@ -568,6 +568,7 @@ private struct QueueRow: View, Equatable {
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .contentShape(RoundedRectangle(cornerRadius: OpenMyChrome.radiusLg, style: .continuous))
+        .opacity(item.isWatched && !isSelected ? 0.72 : 1)
     }
 
     @ViewBuilder
@@ -653,6 +654,12 @@ private struct QueueRow: View, Equatable {
 
     private var statusText: String {
         QueueRowMeta.statusText(state: item.state, progressLabel: item.progressLabel)
+    }
+
+    /// 异常态显示状态，正常态显示作者名（真信息），孤立图标会被误读成删除按钮。
+    private var metaText: String {
+        if !statusText.isEmpty { return statusText }
+        return item.author.isEmpty ? item.sourceName : item.author
     }
 }
 
@@ -1526,9 +1533,15 @@ private struct PlaybackSpeedMenu: View {
         } label: {
             Text(rateLabel(normalizedRate))
                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .foregroundStyle(Color.primary.opacity(0.85))
+                .foregroundStyle(Color.primary.opacity(normalizedRate == 1.0 ? 0.85 : 1))
                 .padding(.horizontal, 11)
                 .frame(height: 32)
+                .background {
+                    // 非常速属于异常态，轻微着色提醒，常速保持沉默。
+                    if normalizedRate != 1.0 {
+                        Capsule().fill(Color.primary.opacity(0.08))
+                    }
+                }
             .contentShape(Capsule())
             .watchGlass(.clear, interactive: true, in: Capsule())
             .overlay {
@@ -1937,6 +1950,13 @@ private struct ChapterSidebar: View {
         }
     }
 
+    /// 时级视频的时间码是 h:mm:ss，按内容预留列宽，避免切换时整列推移。
+    private var timeColumnWidth: CGFloat {
+        let needsHours = chapters.contains { $0.startTime >= 3600 }
+            || subtitleCues.contains { $0.startTime >= 3600 }
+        return needsHours ? 64 : 52
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
             modeToggle
@@ -2015,7 +2035,7 @@ private struct ChapterSidebar: View {
                                 Text(formatTime(chapter.startTime))
                                     .font(.system(size: 11).monospacedDigit())
                                     .foregroundStyle(isCurrentChapter(chapter) ? Color.primary : Color.secondary)
-                                    .frame(width: 52, alignment: .leading)
+                                    .frame(width: timeColumnWidth, alignment: .leading)
                                 Text(chapter.title)
                                     .font(.system(size: 13, weight: isCurrentChapter(chapter) ? .semibold : .regular))
                                     .foregroundStyle(.primary)
@@ -2024,7 +2044,8 @@ private struct ChapterSidebar: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)
                             }
-                            .padding(.horizontal, 10)
+                            .padding(.leading, 10)
+                            .padding(.trailing, 14)
                             .padding(.vertical, 10)
                             .background {
                                 if isCurrentChapter(chapter) {
@@ -2066,11 +2087,12 @@ private struct ChapterSidebar: View {
                                     Text(formatTime(cue.startTime))
                                         .font(.system(size: 11).monospacedDigit())
                                         .foregroundStyle(isCurrent ? Color.primary : Color.secondary)
-                                        .frame(width: 52, alignment: .leading)
+                                        .frame(width: timeColumnWidth, alignment: .leading)
                                     cueTextStack(cue.text, isCurrent: isCurrent)
                                     Spacer(minLength: 0)
                                 }
-                                .padding(.horizontal, 10)
+                                .padding(.leading, 10)
+                                .padding(.trailing, 14)
                                 .padding(.vertical, 8)
                                 .background {
                                     if isCurrent {
@@ -2145,9 +2167,12 @@ private struct ChapterSidebar: View {
             .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        // 译文与原文相同（人名、专名）时只显示一行，避免逐字重复。
+        let translation = lines.dropFirst().joined(separator: "\n")
+        let isDuplicated = lines.count >= 2 && translation == lines[0]
 
         return VStack(alignment: .leading, spacing: 2) {
-            if lines.count >= 2 {
+            if lines.count >= 2, !isDuplicated {
                 Text(lines[0])
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -2161,7 +2186,7 @@ private struct ChapterSidebar: View {
                     .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(lines.first ?? text)
+                Text(isDuplicated ? translation : (lines.first ?? text))
                     .font(.system(size: 13, weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
@@ -2363,9 +2388,6 @@ private struct DropAndAddBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "link")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isDropTarget ? OpenMyChrome.ink : OpenMyChrome.muted)
             TextField("添加链接…", text: $urlText)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier(PlaybackWindowFocusController.urlFieldAccessibilityID)
@@ -2373,13 +2395,14 @@ private struct DropAndAddBar: View {
                 .focused(isURLFieldFocused)
                 .onSubmit(submit)
                 .onExitCommand(perform: removeFocus)
-            Button(action: submit) {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .bold))
+            if !urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: submit) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .watchGlassButton(prominent: true)
+                .controlSize(.small)
             }
-            .watchGlassButton(prominent: true)
-            .controlSize(.small)
-            .disabled(urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.leading, 12)
         .padding(.trailing, 7)
