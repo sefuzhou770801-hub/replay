@@ -9,6 +9,7 @@ struct KeyboardRoutingCheck {
         assertEditingDetection()
         assertIdlePlaybackShortcuts()
         assertEditingPassesText()
+        assertEditingSpaceIsPassedThrough()
         assertLeftoverTextDoesNotBlockShortcuts()
         assertModifierCombinations()
         assertMissingPlayer()
@@ -122,6 +123,65 @@ struct KeyboardRoutingCheck {
             route(keyCode: 125, hasActivePlayer: true) == .adjustRate(-0.1),
             "空闲时下方向键必须减慢播放速度"
         )
+    }
+
+    private static func assertEditingSpaceIsPassedThrough() {
+        precondition(
+            route(isEditingText: true, character: " ", keyCode: 49, hasActivePlayer: true)
+                == .passThrough,
+            "编辑态空格放行：有播放器时也必须交给输入框，不得拦截但不动作"
+        )
+        precondition(
+            route(isEditingText: true, character: " ", keyCode: 49, hasActivePlayer: false)
+                == .passThrough,
+            "编辑态空格放行：无播放器时同样交给输入框"
+        )
+        for character in ["a", "h", "1", ".", "/", "w"] {
+            precondition(
+                route(isEditingText: true, character: character, keyCode: 0, hasActivePlayer: true)
+                    == .passThrough,
+                "编辑态可打印字符必须原样交给输入框"
+            )
+        }
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        let field = NSTextField(string: "")
+        field.isEditable = true
+        window.contentView = field
+        let controller = PlaybackWindowFocusController()
+        controller.attach(to: window)
+        window.makeFirstResponder(field)
+
+        precondition(
+            !controller.allowTextFocus,
+            "HID 聚焦不经过点击监听时，allowTextFocus 仍为假"
+        )
+        precondition(
+            PlaybackKeyboardRouting.isEditingText(in: window),
+            "输入框持有第一响应者时必须判定为编辑态"
+        )
+        precondition(
+            PlaybackKeyboardRouting.action(
+                in: window,
+                keyCode: 49,
+                character: " ",
+                modifiers: [],
+                hasActivePlayer: true
+            ) == .passThrough,
+            "编辑态空格放行：按键决策必须只看第一响应者，不得因 allowTextFocus 为假而吞掉空格"
+        )
+        precondition(
+            PlaybackKeyboardRouting.isEditingText(in: window),
+            "判定编辑态空格时不得先清掉输入框焦点"
+        )
+
+        controller.detach()
+        window.close()
     }
 
     private static func assertEditingPassesText() {

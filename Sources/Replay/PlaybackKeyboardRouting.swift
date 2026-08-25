@@ -17,6 +17,22 @@ enum PlaybackKeyboardRouting {
     ]
 
     static func action(
+        in window: NSWindow?,
+        keyCode: UInt16,
+        character: String?,
+        modifiers: NSEvent.ModifierFlags,
+        hasActivePlayer: Bool
+    ) -> PlaybackKeyboardAction {
+        action(
+            isEditingText: isEditingText(in: window),
+            keyCode: keyCode,
+            character: character,
+            modifiers: modifiers,
+            hasActivePlayer: hasActivePlayer
+        )
+    }
+
+    static func action(
         isEditingText: Bool,
         keyCode: UInt16,
         character: String?,

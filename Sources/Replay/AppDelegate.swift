@@ -47,17 +47,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let focus = PlaybackWindowFocusController.attached(to: event.window)
-            focus?.rejectUnsolicitedTextFocus()
-
-            let isEditingText = focus?.isUserEditingText
-                ?? PlaybackKeyboardRouting.isEditingText(in: event.window)
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
             let decision = PlaybackKeyboardRouting.action(
-                isEditingText: isEditingText,
+                in: event.window,
                 keyCode: event.keyCode,
                 character: event.charactersIgnoringModifiers,
-                modifiers: modifiers,
+                modifiers: event.modifierFlags,
                 hasActivePlayer: PlaybackCommandCenter.shared.hasActivePlayer
             )
 
