@@ -33,6 +33,11 @@ compile_and_run subtitle_presentation \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/tools/subtitle_presentation_check.swift"
 
+compile_and_run subtitle_dispatch \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleDispatch.swift" \
+    "$project_dir/tools/subtitle_dispatch_check.swift"
+
 compile_and_run subtitle_overlay_layout \
     "$project_dir/Sources/Replay/SubtitleOverlayLayout.swift" \
     "$project_dir/tools/subtitle_overlay_layout_check.swift"
@@ -48,6 +53,7 @@ compile_and_run power_mode \
 compile_and_run playback_command \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/SubtitleOverlayLayout.swift" \
+    "$project_dir/Sources/Replay/SubtitleDispatch.swift" \
     "$project_dir/Sources/Replay/LocalVideoPlayer.swift" \
     "$project_dir/tools/playback_command_check.swift"
 
