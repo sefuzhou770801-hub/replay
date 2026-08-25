@@ -2,6 +2,7 @@ import AppKit
 
 enum PlaybackKeyboardAction: Equatable {
     case passThrough
+    case insertLiteralSpace
     case togglePlayback
     case toggleFullscreen
     case exitFullscreen
@@ -36,10 +37,6 @@ enum PlaybackKeyboardRouting {
         )
     }
 
-    static func isReceivingTextInput(in window: NSWindow?) -> Bool {
-        isEditingText(in: window)
-    }
-
     static func action(
         isEditingText: Bool,
         keyCode: UInt16,
@@ -52,6 +49,9 @@ enum PlaybackKeyboardRouting {
         if isEditingText {
             if keyCode == 53, mods.isEmpty {
                 return .resignTextFocus
+            }
+            if keyCode == 49, mods.isEmpty {
+                return .insertLiteralSpace
             }
             return .passThrough
         }
@@ -122,7 +122,7 @@ enum PlaybackKeyboardRouting {
 
     @discardableResult
     static func insertPlainText(_ text: String, in window: NSWindow?) -> Bool {
-        guard isReceivingTextInput(in: window) else { return false }
+        guard isEditingText(in: window) else { return false }
         guard let responder = window?.firstResponder else { return false }
         if let textView = responder as? NSTextView, textView.isEditable {
             let range = textView.selectedRange()

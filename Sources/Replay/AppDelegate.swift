@@ -58,10 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch decision {
             case .passThrough:
-                // SwiftUI 的 SystemTextFieldFieldEditor 会把空格继续交给窗口里的
-                // 播放按钮（performKeyEquivalent / 下一响应者），必须在监听器里写入并吃掉。
-                if event.keyCode == 49,
-                   PlaybackKeyboardRouting.insertPlainText(" ", in: window) {
+                return event
+            case .insertLiteralSpace:
+                // 无修饰空格才会到这里。SwiftUI 字段编辑器会把普通空格交给播放按钮，
+                // 必须写入 U+0020 并消费。带修饰键的空格走 passThrough，留给系统。
+                if PlaybackKeyboardRouting.insertPlainText(" ", in: window) {
                     return nil
                 }
                 return event

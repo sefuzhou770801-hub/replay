@@ -31,18 +31,6 @@ final class PlaybackWindowFocusController {
         NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
     }
 
-    var isReceivingTextInput: Bool {
-        allowTextFocus || swiftUITextFieldFocused
-    }
-
-    var isUserEditingText: Bool {
-        isReceivingTextInput
-    }
-
-    func noteTextInputStarted() {
-        allowTextFocus = true
-    }
-
     func setSwiftUITextFieldFocused(_ focused: Bool) {
         swiftUITextFieldFocused = focused
         if focused {

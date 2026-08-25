@@ -98,7 +98,7 @@ if [[ "$install_app" == "1" ]]; then
 fi
 
 if [[ "$launch_app" == "1" ]]; then
-    open "$launch_target"
+    open -g "$launch_target"
 fi
 
 printf '%s\n' "$app_dir"

@@ -10,6 +10,7 @@ struct KeyboardRoutingCheck {
         assertIdlePlaybackShortcuts()
         assertEditingPassesText()
         assertEditingSpaceIsPassedThrough()
+        assertModifierSpaceIsPassedThrough()
         assertSpacePassesWhenReceivingTextInput()
         assertLeftoverTextDoesNotBlockShortcuts()
         assertModifierCombinations()
@@ -76,10 +77,6 @@ struct KeyboardRoutingCheck {
             !controller.allowTextFocus,
             "窗口挂上时不得把输入框当作用户正在编辑"
         )
-        precondition(
-            !controller.isUserEditingText,
-            "启动后未点击输入框时，快捷键闸门必须视为空闲"
-        )
         if window.firstResponder != nil {
             precondition(
                 !PlaybackKeyboardRouting.isEditingText(in: window),
@@ -129,13 +126,13 @@ struct KeyboardRoutingCheck {
     private static func assertEditingSpaceIsPassedThrough() {
         precondition(
             route(isEditingText: true, character: " ", keyCode: 49, hasActivePlayer: true)
-                == .passThrough,
-            "编辑态空格放行：有播放器时也必须交给输入框，不得拦截但不动作"
+                == .insertLiteralSpace,
+            "编辑态无修饰空格必须写入普通空格，避免被播放按钮吃掉"
         )
         precondition(
             route(isEditingText: true, character: " ", keyCode: 49, hasActivePlayer: false)
-                == .passThrough,
-            "编辑态空格放行：无播放器时同样交给输入框"
+                == .insertLiteralSpace,
+            "无播放器时，编辑态无修饰空格同样写入普通空格"
         )
         for character in ["a", "h", "1", ".", "/", "w"] {
             precondition(
@@ -173,8 +170,8 @@ struct KeyboardRoutingCheck {
                 character: " ",
                 modifiers: [],
                 hasActivePlayer: true
-            ) == .passThrough,
-            "编辑态空格放行：按键决策必须只看第一响应者，不得因 allowTextFocus 为假而吞掉空格"
+            ) == .insertLiteralSpace,
+            "编辑态无修饰空格必须写入普通空格：按键决策只看第一响应者"
         )
         precondition(
             PlaybackKeyboardRouting.isEditingText(in: window),
@@ -183,6 +180,43 @@ struct KeyboardRoutingCheck {
 
         controller.detach()
         window.close()
+    }
+
+    private static func assertModifierSpaceIsPassedThrough() {
+        precondition(
+            route(isEditingText: true, keyCode: 49, modifiers: .option, hasActivePlayer: true)
+                == .passThrough,
+            "编辑态 Option-Space 必须原样放行，不得改写成普通空格"
+        )
+        precondition(
+            route(isEditingText: true, keyCode: 49, modifiers: .shift, hasActivePlayer: true)
+                == .passThrough,
+            "编辑态 Shift-Space 必须原样放行"
+        )
+        precondition(
+            route(isEditingText: true, keyCode: 49, modifiers: .command, hasActivePlayer: true)
+                == .passThrough,
+            "编辑态 Command-Space 必须原样放行"
+        )
+        precondition(
+            route(isEditingText: true, keyCode: 49, modifiers: .control, hasActivePlayer: true)
+                == .passThrough,
+            "编辑态 Control-Space 必须原样放行"
+        )
+        precondition(
+            route(
+                isEditingText: true,
+                keyCode: 49,
+                modifiers: [.option, .shift],
+                hasActivePlayer: true
+            ) == .passThrough,
+            "编辑态带多个修饰键的空格必须原样放行"
+        )
+        precondition(
+            route(isEditingText: true, keyCode: 49, modifiers: [], hasActivePlayer: true)
+                == .insertLiteralSpace,
+            "只有无修饰键的普通空格才写入 U+0020"
+        )
     }
 
     private static func assertSpacePassesWhenReceivingTextInput() {
@@ -202,8 +236,8 @@ struct KeyboardRoutingCheck {
         let controller = PlaybackWindowFocusController()
         controller.attach(to: window)
         precondition(
-            !PlaybackKeyboardRouting.isReceivingTextInput(in: window),
-            "未点击输入框时不得当作正在接收文字"
+            !PlaybackKeyboardRouting.isEditingText(in: window),
+            "未点击输入框时不得当作正在编辑"
         )
         precondition(
             PlaybackKeyboardRouting.action(
@@ -216,7 +250,6 @@ struct KeyboardRoutingCheck {
             "未在输入时，空格才是播放快捷键"
         )
 
-        controller.noteTextInputStarted()
         precondition(
             PlaybackKeyboardRouting.action(
                 in: window,
@@ -256,7 +289,6 @@ struct KeyboardRoutingCheck {
         editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
         window.contentView = editor
         window.makeFirstResponder(editor)
-        controller.noteTextInputStarted()
         precondition(
             PlaybackKeyboardRouting.insertPlainText(" ", in: window),
             "编辑态空格必须能写入字段编辑器"
@@ -276,8 +308,8 @@ struct KeyboardRoutingCheck {
 
     private static func assertEditingPassesText() {
         precondition(
-            route(isEditingText: true, keyCode: 49, hasActivePlayer: true) == .passThrough,
-            "编辑态空格必须留给文字"
+            route(isEditingText: true, keyCode: 49, hasActivePlayer: true) == .insertLiteralSpace,
+            "编辑态无修饰空格必须写入普通空格"
         )
         precondition(
             route(isEditingText: true, character: "f", keyCode: 3, hasActivePlayer: true) == .passThrough,
