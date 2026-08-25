@@ -43,27 +43,21 @@ struct QueueRowMetaCheck {
         )
 
         let states: [DownloadState] = [.queued, .downloading, .ready, .failed]
-        for isWatched in [false, true] {
-            for state in states {
-                for canReveal in [false, true] {
-                    let items = QueueRowMeta.contextMenuItems(
-                        isWatched: isWatched,
-                        state: state,
-                        canRevealLocalFile: canReveal
-                    )
-                    precondition(
-                        items.contains(.rename),
-                        "任意队列行右键菜单都必须有重命名：watched=\(isWatched) state=\(state) reveal=\(canReveal)"
-                    )
-                    precondition(
-                        QueueRowMeta.visibleTitle(for: .rename, isWatched: isWatched) == "重命名"
-                    )
-                }
+        for state in states {
+            for canReveal in [false, true] {
+                let items = QueueRowMeta.contextMenuItems(
+                    state: state,
+                    canRevealLocalFile: canReveal
+                )
+                precondition(
+                    items.contains(.rename),
+                    "任意队列行右键菜单都必须有重命名：state=\(state) reveal=\(canReveal)"
+                )
+                precondition(QueueRowMeta.visibleTitle(for: .rename, isWatched: false) == "重命名")
             }
         }
 
         let failedMenu = QueueRowMeta.contextMenuItems(
-            isWatched: false,
             state: .failed,
             canRevealLocalFile: false
         )
@@ -72,7 +66,6 @@ struct QueueRowMetaCheck {
         ])
 
         let readyWithFile = QueueRowMeta.contextMenuItems(
-            isWatched: true,
             state: .ready,
             canRevealLocalFile: true
         )
@@ -82,11 +75,66 @@ struct QueueRowMetaCheck {
         precondition(QueueRowMeta.visibleTitle(for: .toggleWatched, isWatched: true) == "移回队列")
         precondition(QueueRowMeta.visibleTitle(for: .toggleWatched, isWatched: false) == "标记已看")
 
-        precondition(QueueRowMeta.shouldBeginTitleEditing(isSelected: true, clickCount: 2))
-        precondition(QueueRowMeta.shouldBeginTitleEditing(isSelected: true, clickCount: 3))
-        precondition(!QueueRowMeta.shouldBeginTitleEditing(isSelected: true, clickCount: 1))
-        precondition(!QueueRowMeta.shouldBeginTitleEditing(isSelected: false, clickCount: 2))
-        precondition(!QueueRowMeta.shouldBeginTitleEditing(isSelected: false, clickCount: 1))
+        func applyClick(
+            _ state: inout QueueRowMeta.TitleClickState,
+            isSelected: Bool,
+            clickCount: Int,
+            continuesPair: Bool
+        ) -> QueueRowMeta.TitleClickAction {
+            let result = QueueRowMeta.handleTitleClick(
+                state: state,
+                isSelected: isSelected,
+                clickCount: clickCount,
+                continuesPair: continuesPair
+            )
+            state = result.0
+            return result.1
+        }
+
+        var clickState = QueueRowMeta.TitleClickState()
+        precondition(
+            applyClick(&clickState, isSelected: true, clickCount: 1, continuesPair: false) == .select
+        )
+        precondition(
+            applyClick(&clickState, isSelected: true, clickCount: 2, continuesPair: true) == .beginEditing,
+            "已选中行双击必须进编辑"
+        )
+
+        clickState = QueueRowMeta.TitleClickState()
+        _ = applyClick(&clickState, isSelected: true, clickCount: 1, continuesPair: false)
+        precondition(
+            applyClick(&clickState, isSelected: true, clickCount: 1, continuesPair: true) == .beginEditing,
+            "已选中行两击都报 clickCount=1 仍须进编辑"
+        )
+
+        clickState = QueueRowMeta.TitleClickState()
+        precondition(
+            applyClick(&clickState, isSelected: false, clickCount: 1, continuesPair: false) == .select
+        )
+        precondition(
+            applyClick(&clickState, isSelected: true, clickCount: 2, continuesPair: true) == .select,
+            "未选中行双击：第二击读到重绘后的选中态，也不得进编辑"
+        )
+
+        clickState = QueueRowMeta.TitleClickState()
+        _ = applyClick(&clickState, isSelected: false, clickCount: 1, continuesPair: false)
+        precondition(
+            applyClick(&clickState, isSelected: true, clickCount: 1, continuesPair: true) == .select,
+            "未选中行两击都报 clickCount=1：选择变化后仍只选中"
+        )
+
+        clickState = QueueRowMeta.TitleClickState()
+        _ = applyClick(&clickState, isSelected: true, clickCount: 1, continuesPair: false)
+        precondition(
+            applyClick(&clickState, isSelected: true, clickCount: 1, continuesPair: false) == .select,
+            "超过双击间隔的第二次单击不得进编辑"
+        )
+
+        clickState = QueueRowMeta.TitleClickState()
+        precondition(
+            applyClick(&clickState, isSelected: false, clickCount: 2, continuesPair: false) == .select,
+            "单次事件即使 clickCount>=2，也要用第一击选中态"
+        )
 
         precondition(
             QueueRowMeta.titleEditCommit(reason: .submit, draft: "  新标题  ") == .save("新标题")

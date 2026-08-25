@@ -251,7 +251,6 @@ struct ContentView: View {
             exists: { FileManager.default.fileExists(atPath: $0) }
         ) != nil
         let items = QueueRowMeta.contextMenuItems(
-            isWatched: item.isWatched,
             state: item.state,
             canRevealLocalFile: canReveal
         )
@@ -457,6 +456,7 @@ private struct QueueRow: View, Equatable {
     @State private var draftTitle = ""
     @State private var isHovering = false
     @State private var lastSelectClickAt: Date?
+    @State private var titleClickState = QueueRowMeta.TitleClickState()
     @FocusState private var isTitleFocused: Bool
 
     static func == (lhs: QueueRow, rhs: QueueRow) -> Bool {
@@ -493,9 +493,9 @@ private struct QueueRow: View, Equatable {
                 consumePendingRename()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .replayTextFocusShouldResign)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .replayTextFocusShouldResign)) { notification in
             guard isEditingTitle else { return }
-            finishEditing(reason: titleEditReasonFromResign)
+            finishEditing(reason: titleEditReason(from: notification))
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -504,23 +504,27 @@ private struct QueueRow: View, Equatable {
 
     private func handleRowAction() {
         let reportedCount = NSApp.currentEvent?.clickCount ?? 1
-        let inferredCount: Int
-        if isSelected,
-           reportedCount < 2,
-           let last = lastSelectClickAt,
+        let continuesPair: Bool
+        if let last = lastSelectClickAt,
            Date().timeIntervalSince(last) <= NSEvent.doubleClickInterval {
-            inferredCount = 2
+            continuesPair = true
         } else {
-            inferredCount = reportedCount
+            continuesPair = false
         }
-
-        if QueueRowMeta.shouldBeginTitleEditing(isSelected: isSelected, clickCount: inferredCount) {
-            lastSelectClickAt = nil
+        let action: QueueRowMeta.TitleClickAction
+        (titleClickState, action) = QueueRowMeta.handleTitleClick(
+            state: titleClickState,
+            isSelected: isSelected,
+            clickCount: reportedCount,
+            continuesPair: continuesPair
+        )
+        lastSelectClickAt = Date()
+        switch action {
+        case .beginEditing:
             beginEditing()
-            return
+        case .select:
+            select()
         }
-        lastSelectClickAt = isSelected ? Date() : nil
-        select()
     }
 
     private var buttonLabel: some View {
@@ -591,7 +595,7 @@ private struct QueueRow: View, Equatable {
                 .onExitCommand { finishEditing(reason: .escape) }
                 .onChange(of: isTitleFocused) { focused in
                     if !focused, isEditingTitle {
-                        finishEditing(reason: titleEditReasonFromResign)
+                        finishEditing(reason: .focusLost)
                     }
                 }
                 .padding(.horizontal, 5)
@@ -611,8 +615,8 @@ private struct QueueRow: View, Equatable {
         }
     }
 
-    private var titleEditReasonFromResign: QueueRowMeta.TitleEditEndReason {
-        TextFocusResignReason.latest == .escape ? .escape : .focusLost
+    private func titleEditReason(from notification: Notification) -> QueueRowMeta.TitleEditEndReason {
+        TextFocusResignReason.from(notification) == .escape ? .escape : .focusLost
     }
 
     private func beginEditing() {
@@ -634,9 +638,6 @@ private struct QueueRow: View, Equatable {
         }
         isEditingTitle = false
         isTitleFocused = false
-        if reason == .escape {
-            TextFocusResignReason.latest = .other
-        }
     }
 
     private var icon: String {

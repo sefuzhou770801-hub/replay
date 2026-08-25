@@ -9,8 +9,20 @@ enum TextFocusResignReason: String {
     case other
 
     static let userInfoKey = "reason"
-    /// 在卸第一响应者之前写入，标题编辑用它判断 Esc 取消还是点走保存。
-    static var latest: TextFocusResignReason = .other
+
+    static func from(_ notification: Notification) -> TextFocusResignReason {
+        guard let raw = notification.userInfo?[userInfoKey] as? String,
+              let reason = TextFocusResignReason(rawValue: raw) else {
+            return .other
+        }
+        return reason
+    }
+}
+
+enum TextFocusMouseDownAction: Equatable {
+    case allowNewTextFocus
+    case commitPreviousAndAllowNewTextFocus
+    case resignCurrent
 }
 
 /// 窗口层焦点闸门：启动时不把键盘交给链接输入框，点击输入框以外立即失焦。
@@ -40,8 +52,21 @@ final class PlaybackWindowFocusController {
         window?.makeFirstResponder(nil)
     }
 
+    static func mouseDownAction(
+        hitsEditableText: Bool,
+        isEditingText: Bool,
+        hitsCurrentEditor: Bool
+    ) -> TextFocusMouseDownAction {
+        if hitsEditableText {
+            if isEditingText, !hitsCurrentEditor {
+                return .commitPreviousAndAllowNewTextFocus
+            }
+            return .allowNewTextFocus
+        }
+        return .resignCurrent
+    }
+
     private static func postResignNotification(window: NSWindow?, reason: TextFocusResignReason) {
-        TextFocusResignReason.latest = reason
         NotificationCenter.default.post(
             name: .replayTextFocusShouldResign,
             object: window,
@@ -127,21 +152,71 @@ final class PlaybackWindowFocusController {
         }
     }
 
+    func performMouseDown(
+        hitsEditableText: Bool,
+        isEditingText: Bool,
+        hitsCurrentEditor: Bool
+    ) {
+        applyMouseDownAction(
+            Self.mouseDownAction(
+                hitsEditableText: hitsEditableText,
+                isEditingText: isEditingText,
+                hitsCurrentEditor: hitsCurrentEditor
+            )
+        )
+    }
+
     private func handleMouseDown(_ event: NSEvent) {
         guard let window else { return }
-        if event.window === window, clickHitsEditableText(event) {
-            allowTextFocus = true
+        if event.window !== window {
+            applyMouseDownAction(.resignCurrent)
             return
         }
+        applyMouseDownAction(
+            Self.mouseDownAction(
+                hitsEditableText: clickHitsEditableText(event),
+                isEditingText: PlaybackKeyboardRouting.isEditingText(in: window),
+                hitsCurrentEditor: clickHitsCurrentEditor(event)
+            )
+        )
+    }
 
-        allowTextFocus = false
-        if PlaybackKeyboardRouting.isEditingText(in: window) {
-            clearTextFocus(in: window, reason: .other)
+    private func applyMouseDownAction(_ action: TextFocusMouseDownAction) {
+        switch action {
+        case .allowNewTextFocus:
+            allowTextFocus = true
+        case .commitPreviousAndAllowNewTextFocus:
+            allowTextFocus = true
+            Self.postResignNotification(window: window, reason: .other)
+        case .resignCurrent:
+            allowTextFocus = false
+            if let window, PlaybackKeyboardRouting.isEditingText(in: window) {
+                clearTextFocus(in: window, reason: .other)
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.rejectUnsolicitedTextFocus()
+            }
         }
-        // SwiftUI @FocusState 可能在下一拍把输入框焦点抢回来，再清一次。
-        DispatchQueue.main.async { [weak self] in
-            self?.rejectUnsolicitedTextFocus()
+    }
+
+    private func clickHitsCurrentEditor(_ event: NSEvent) -> Bool {
+        guard let window = event.window else { return false }
+        let root = window.contentView?.superview ?? window.contentView
+        guard let root else { return false }
+        let hit = root.hitTest(event.locationInWindow)
+        guard let first = window.firstResponder else { return false }
+        if let hit, hit === first { return true }
+        if let firstView = first as? NSView, let hit {
+            if hit === firstView || hit.isDescendant(of: firstView) || firstView.isDescendant(of: hit) {
+                return true
+            }
         }
+        if let editor = first as? NSTextView, let field = editor.delegate as? NSView, let hit {
+            if hit === field || hit.isDescendant(of: field) || field.isDescendant(of: hit) {
+                return true
+            }
+        }
+        return false
     }
 
     private func clickHitsEditableText(_ event: NSEvent) -> Bool {

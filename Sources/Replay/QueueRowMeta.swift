@@ -64,7 +64,6 @@ enum QueueRowMeta {
     }
 
     static func contextMenuItems(
-        isWatched _: Bool,
         state: DownloadState,
         canRevealLocalFile: Bool
     ) -> [ContextMenuItem] {
@@ -99,8 +98,28 @@ enum QueueRowMeta {
         }
     }
 
-    static func shouldBeginTitleEditing(isSelected: Bool, clickCount: Int) -> Bool {
-        isSelected && clickCount >= 2
+    struct TitleClickState: Equatable {
+        var selectedAtPairStart: Bool?
+    }
+
+    enum TitleClickAction: Equatable {
+        case beginEditing
+        case select
+    }
+
+    /// 第二击必须用第一击时的选中状态。两击之间 SwiftUI 重绘把 isSelected 改成 true 不得进编辑。
+    static func handleTitleClick(
+        state: TitleClickState,
+        isSelected: Bool,
+        clickCount: Int,
+        continuesPair: Bool
+    ) -> (TitleClickState, TitleClickAction) {
+        let isContinuation = (clickCount >= 2 || continuesPair) && state.selectedAtPairStart != nil
+        if isContinuation {
+            let selectedAtStart = state.selectedAtPairStart ?? false
+            return (TitleClickState(selectedAtPairStart: nil), selectedAtStart ? .beginEditing : .select)
+        }
+        return (TitleClickState(selectedAtPairStart: isSelected), .select)
     }
 
     static func titleEditCommit(reason: TitleEditEndReason, draft: String) -> TitleEditCommit {
