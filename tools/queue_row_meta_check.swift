@@ -19,12 +19,13 @@ struct QueueRowMetaCheck {
         precondition(Set(knownMarks).count == 4, "四个平台简标种类必须互不相同")
 
         let readyWithProgress = QueueRowMeta.statusText(state: .ready, progressLabel: "已下载")
+        // 就绪态正常沉默，不显示任何状态文字。
         precondition(
             !readyWithProgress.contains("续播"),
             "就绪态不得出现续播文案，实际：\(readyWithProgress)"
         )
-        precondition(readyWithProgress == "已存到本地")
-        precondition(QueueRowMeta.statusText(state: .ready, progressLabel: "续播 99:28") == "已存到本地")
+        precondition(readyWithProgress.isEmpty)
+        precondition(QueueRowMeta.statusText(state: .ready, progressLabel: "续播 99:28").isEmpty)
 
         precondition(QueueRowMeta.statusText(state: .queued, progressLabel: "排队中") == "排队中")
         precondition(QueueRowMeta.statusText(state: .queued, progressLabel: "低电量模式已暂停") == "低电量模式已暂停")

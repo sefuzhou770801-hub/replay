@@ -546,12 +546,10 @@ private struct QueueRow: View, Equatable {
 
                 HStack(spacing: 5) {
                     SourceBrandMark(sourceName: item.sourceName)
-                    Text(displaySource)
-                    Circle()
-                        .fill(Color.secondary.opacity(0.55))
-                        .frame(width: 2.5, height: 2.5)
-                    Text(statusText)
-                        .lineLimit(1)
+                    if !statusText.isEmpty {
+                        Text(statusText)
+                            .lineLimit(1)
+                    }
                 }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(item.state == .failed ? OpenMyChrome.rec : OpenMyChrome.muted)
@@ -713,13 +711,6 @@ private struct QueueThumbnail: View {
             VStack {
                 Spacer()
                 HStack(alignment: .bottom) {
-                    if item.isWatched {
-                        Image(systemName: "checkmark")
-                            .font(.caption2.bold())
-                            .foregroundStyle(.white)
-                            .padding(5)
-                            .background(OpenMyChrome.success, in: Circle())
-                    }
                     Spacer()
                     if let duration = item.duration, item.state == .ready {
                         Text(formatDuration(duration))
@@ -790,9 +781,10 @@ private struct SidebarSectionHeader: View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
             Text(title)
-            Spacer()
             Text("\(count)")
                 .monospacedDigit()
+                .foregroundStyle(OpenMyChrome.faint)
+            Spacer()
         }
         .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(OpenMyChrome.muted)
@@ -1434,7 +1426,7 @@ private struct PlaybackControls: View {
             )
 
             PlayerControlButton(
-                systemImage: subtitlesEnabled && hasSubtitles ? "captions.bubble.fill" : "captions.bubble",
+                systemImage: "captions.bubble",
                 help: hasSubtitles
                     ? (subtitlesEnabled ? "关闭字幕" : "打开字幕")
                     : "没有可用的字幕",
@@ -1949,13 +1941,6 @@ private struct ChapterSidebar: View {
         HStack(spacing: 8) {
             modeToggle
 
-            Text("\(listCount)")
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Color.secondary.opacity(0.1), in: Capsule())
-
             Spacer(minLength: 8)
 
             if isPresented {
@@ -2381,7 +2366,7 @@ private struct DropAndAddBar: View {
             Image(systemName: "link")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isDropTarget ? OpenMyChrome.ink : OpenMyChrome.muted)
-            TextField("粘贴链接或文字", text: $urlText)
+            TextField("添加链接…", text: $urlText)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier(PlaybackWindowFocusController.urlFieldAccessibilityID)
                 .frame(minWidth: 0, maxWidth: .infinity)

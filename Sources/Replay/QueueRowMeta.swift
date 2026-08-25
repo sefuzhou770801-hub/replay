@@ -24,12 +24,13 @@ enum QueueRowMeta {
         }
     }
 
+    /// 正常态沉默：就绪是常态，不占用文字；只有排队、下载、失败这些异常态才说话。
     static func statusText(state: DownloadState, progressLabel: String) -> String {
         switch state {
         case .queued, .downloading, .failed:
             return progressLabel
         case .ready:
-            return "已存到本地"
+            return ""
         }
     }
 
