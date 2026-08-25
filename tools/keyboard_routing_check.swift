@@ -10,6 +10,7 @@ struct KeyboardRoutingCheck {
         assertIdlePlaybackShortcuts()
         assertEditingPassesText()
         assertEditingSpaceIsPassedThrough()
+        assertSpacePassesWhenReceivingTextInput()
         assertLeftoverTextDoesNotBlockShortcuts()
         assertModifierCombinations()
         assertMissingPlayer()
@@ -179,6 +180,95 @@ struct KeyboardRoutingCheck {
             PlaybackKeyboardRouting.isEditingText(in: window),
             "判定编辑态空格时不得先清掉输入框焦点"
         )
+
+        controller.detach()
+        window.close()
+    }
+
+    private static func assertSpacePassesWhenReceivingTextInput() {
+        precondition(
+            PlaybackKeyboardRouting.isTextInputClassName("SwiftUI.TextFieldHost"),
+            "SwiftUI 输入框类名必须识别为文字输入"
+        )
+        precondition(!PlaybackKeyboardRouting.isTextInputClassName("NSButton"))
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = NSView(frame: window.contentLayoutRect)
+        let controller = PlaybackWindowFocusController()
+        controller.attach(to: window)
+        precondition(
+            !PlaybackKeyboardRouting.isReceivingTextInput(in: window),
+            "未点击输入框时不得当作正在接收文字"
+        )
+        precondition(
+            PlaybackKeyboardRouting.action(
+                in: window,
+                keyCode: 49,
+                character: " ",
+                modifiers: [],
+                hasActivePlayer: true
+            ) == .togglePlayback,
+            "未在输入时，空格才是播放快捷键"
+        )
+
+        controller.noteTextInputStarted()
+        precondition(
+            PlaybackKeyboardRouting.action(
+                in: window,
+                keyCode: 49,
+                character: " ",
+                modifiers: [],
+                hasActivePlayer: true
+            ) == .togglePlayback,
+            "第一响应者不是输入框时，空格必须仍是播放快捷键"
+        )
+        precondition(
+            PlaybackKeyboardRouting.action(
+                in: window,
+                keyCode: 4,
+                character: "h",
+                modifiers: [],
+                hasActivePlayer: true
+            ) == .passThrough
+        )
+
+        controller.setSwiftUITextFieldFocused(false)
+        controller.resignTextFocus()
+        precondition(
+            PlaybackKeyboardRouting.action(
+                in: window,
+                keyCode: 49,
+                character: " ",
+                modifiers: [],
+                hasActivePlayer: true
+            ) == .togglePlayback,
+            "失焦后空格必须恢复为播放快捷键"
+        )
+
+        let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        editor.isEditable = true
+        editor.string = "hi"
+        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        window.contentView = editor
+        window.makeFirstResponder(editor)
+        controller.noteTextInputStarted()
+        precondition(
+            PlaybackKeyboardRouting.insertPlainText(" ", in: window),
+            "编辑态空格必须能写入字段编辑器"
+        )
+        precondition(
+            editor.string == "hi ",
+            "写入后字段必须含空格"
+        )
+        precondition(
+            PlaybackKeyboardRouting.insertPlainText("x", in: window)
+        )
+        precondition(editor.string == "hi x")
 
         controller.detach()
         window.close()

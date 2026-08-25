@@ -47,8 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let window = PlaybackKeyboardRouting.window(for: event)
             let decision = PlaybackKeyboardRouting.action(
-                in: event.window,
+                in: window,
                 keyCode: event.keyCode,
                 character: event.charactersIgnoringModifiers,
                 modifiers: event.modifierFlags,
@@ -57,6 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch decision {
             case .passThrough:
+                // SwiftUI 的 SystemTextFieldFieldEditor 会把空格继续交给窗口里的
+                // 播放按钮（performKeyEquivalent / 下一响应者），必须在监听器里写入并吃掉。
+                if event.keyCode == 49,
+                   PlaybackKeyboardRouting.insertPlainText(" ", in: window) {
+                    return nil
+                }
                 return event
             case .resignTextFocus:
                 PlaybackWindowFocusController.resign(in: event.window)

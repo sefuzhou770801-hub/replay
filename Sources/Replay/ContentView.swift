@@ -75,11 +75,12 @@ struct ContentView: View {
             isURLFieldFocused = false
         }
         .onChange(of: isURLFieldFocused) { focused in
-            guard focused else { return }
-            let allowed = PlaybackWindowFocusController.attached(to: NSApp.keyWindow)?.allowTextFocus ?? true
-            if !allowed {
+            let controller = PlaybackWindowFocusController.attached(to: NSApp.keyWindow)
+            if focused, controller?.allowTextFocus == false {
                 isURLFieldFocused = false
+                return
             }
+            controller?.setSwiftUITextFieldFocused(focused)
         }
         .onDisappear { detailSelectionTask?.cancel() }
         .onChange(of: store.selection) { selectedID in
@@ -2290,6 +2291,7 @@ private struct DropAndAddBar: View {
                 .foregroundStyle(isDropTarget ? OpenMyChrome.ink : OpenMyChrome.muted)
             TextField("粘贴链接或文字", text: $urlText)
                 .textFieldStyle(.plain)
+                .accessibilityIdentifier(PlaybackWindowFocusController.urlFieldAccessibilityID)
                 .frame(minWidth: 0, maxWidth: .infinity)
                 .focused(isURLFieldFocused)
                 .onSubmit(submit)

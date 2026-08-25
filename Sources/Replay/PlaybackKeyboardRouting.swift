@@ -16,6 +16,10 @@ enum PlaybackKeyboardRouting {
         .command, .option, .control, .shift
     ]
 
+    static func window(for event: NSEvent) -> NSWindow? {
+        event.window ?? NSApp.keyWindow
+    }
+
     static func action(
         in window: NSWindow?,
         keyCode: UInt16,
@@ -30,6 +34,10 @@ enum PlaybackKeyboardRouting {
             modifiers: modifiers,
             hasActivePlayer: hasActivePlayer
         )
+    }
+
+    static func isReceivingTextInput(in window: NSWindow?) -> Bool {
+        isEditingText(in: window)
     }
 
     static func action(
@@ -86,12 +94,18 @@ enum PlaybackKeyboardRouting {
     }
 
     static func isEditingText(firstResponder: NSResponder?) -> Bool {
-        guard let responder = firstResponder else { return false }
-        if let view = responder as? NSView, isEditableTextSurface(view) {
-            return true
-        }
-        if let control = responder as? NSControl {
-            return control.currentEditor() != nil
+        var current = firstResponder
+        while let responder = current {
+            if let view = responder as? NSView, isEditableTextSurface(view) {
+                return true
+            }
+            if let control = responder as? NSControl, control.currentEditor() != nil {
+                return true
+            }
+            if isTextInputClassName((responder as NSObject).className) {
+                return true
+            }
+            current = responder.nextResponder
         }
         return false
     }
@@ -104,5 +118,30 @@ enum PlaybackKeyboardRouting {
             return textField.isEditable
         }
         return false
+    }
+
+    @discardableResult
+    static func insertPlainText(_ text: String, in window: NSWindow?) -> Bool {
+        guard isReceivingTextInput(in: window) else { return false }
+        guard let responder = window?.firstResponder else { return false }
+        if let textView = responder as? NSTextView, textView.isEditable {
+            let range = textView.selectedRange()
+            textView.insertText(text, replacementRange: range)
+            return true
+        }
+        if let client = responder as? NSTextInputClient {
+            client.insertText(text, replacementRange: client.selectedRange())
+            return true
+        }
+        return false
+    }
+
+    static func isTextInputClassName(_ className: String) -> Bool {
+        if className.hasPrefix("NSText") {
+            return false
+        }
+        return className.contains("TextField")
+            || className.contains("TextEditor")
+            || className.contains("FieldEditor")
     }
 }

@@ -12,7 +12,10 @@ final class PlaybackWindowFocusController {
     private weak var window: NSWindow?
     private var mouseMonitor: Any?
     private var keyWindowObserver: NSObjectProtocol?
+    static let urlFieldAccessibilityID = "replay.url-field"
+
     private(set) var allowTextFocus = false
+    private var swiftUITextFieldFocused = false
 
     static func attached(to window: NSWindow?) -> PlaybackWindowFocusController? {
         guard let window else { return nil }
@@ -28,8 +31,23 @@ final class PlaybackWindowFocusController {
         NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
     }
 
+    var isReceivingTextInput: Bool {
+        allowTextFocus || swiftUITextFieldFocused
+    }
+
     var isUserEditingText: Bool {
-        allowTextFocus && PlaybackKeyboardRouting.isEditingText(in: window)
+        isReceivingTextInput
+    }
+
+    func noteTextInputStarted() {
+        allowTextFocus = true
+    }
+
+    func setSwiftUITextFieldFocused(_ focused: Bool) {
+        swiftUITextFieldFocused = focused
+        if focused {
+            allowTextFocus = true
+        }
     }
 
     func attach(to window: NSWindow) {
@@ -59,6 +77,7 @@ final class PlaybackWindowFocusController {
         }
         window = nil
         allowTextFocus = false
+        swiftUITextFieldFocused = false
     }
 
     func resignTextFocus() {
@@ -123,13 +142,6 @@ final class PlaybackWindowFocusController {
         guard let window = event.window else { return false }
         let location = event.locationInWindow
 
-        if let textView = window.firstResponder as? NSTextView, textView.isEditable {
-            let rect = textView.convert(textView.bounds, to: nil)
-            if rect.contains(location) {
-                return true
-            }
-        }
-
         let root = window.contentView?.superview ?? window.contentView
         guard let root else { return false }
         if ancestorIsEditableText(root.hitTest(location)) {
@@ -142,6 +154,12 @@ final class PlaybackWindowFocusController {
         var current = view
         while let view = current {
             if PlaybackKeyboardRouting.isEditableTextSurface(view) {
+                return true
+            }
+            if view.accessibilityIdentifier() == Self.urlFieldAccessibilityID {
+                return true
+            }
+            if PlaybackKeyboardRouting.isTextInputClassName(view.className) {
                 return true
             }
             current = view.superview
@@ -164,6 +182,7 @@ final class PlaybackWindowFocusController {
 
     private func clearTextFocus(in window: NSWindow) {
         allowTextFocus = false
+        swiftUITextFieldFocused = false
         window.makeFirstResponder(nil)
         NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
     }
