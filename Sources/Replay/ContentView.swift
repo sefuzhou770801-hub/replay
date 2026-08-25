@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var queueRowFrames: [UUID: CGRect] = [:]
     @State private var windowWidth: CGFloat = 1320
     @State private var urlBarFrame: CGRect = .zero
+    @State private var pendingRenameID: UUID?
     @FocusState private var isURLFieldFocused: Bool
 
     var body: some View {
@@ -227,28 +228,78 @@ struct ContentView: View {
                 detailSelection = item.id
                 store.rescanLocalSubtitle(for: item.id)
             },
-            rename: { store.rename(item.id, to: $0) }
+            rename: { store.rename(item.id, to: $0) },
+            pendingRename: pendingRenameID == item.id,
+            consumePendingRename: {
+                if pendingRenameID == item.id {
+                    pendingRenameID = nil
+                }
+            }
         )
         .equatable()
         .id(item.id)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu {
-            Button(item.isWatched ? "移回队列" : "标记已看") {
+            queueRowContextMenu(item)
+        }
+    }
+
+    @ViewBuilder
+    private func queueRowContextMenu(_ item: WatchItem) -> some View {
+        let canReveal = QueueRowMeta.localFileToReveal(
+            path: item.localFilePath,
+            exists: { FileManager.default.fileExists(atPath: $0) }
+        ) != nil
+        let items = QueueRowMeta.contextMenuItems(
+            state: item.state,
+            canRevealLocalFile: canReveal
+        )
+        ForEach(items, id: \.self) { menuItem in
+            queueRowContextMenuEntry(menuItem, for: item)
+        }
+    }
+
+    @ViewBuilder
+    private func queueRowContextMenuEntry(
+        _ menuItem: QueueRowMeta.ContextMenuItem,
+        for item: WatchItem
+    ) -> some View {
+        switch menuItem {
+        case .toggleWatched:
+            Button(QueueRowMeta.visibleTitle(for: .toggleWatched, isWatched: item.isWatched)) {
                 store.toggleWatched(item.id)
             }
-            if item.state == .failed {
-                Button("重试下载") { store.startDownload(for: item.id) }
+        case .rename:
+            Button(QueueRowMeta.visibleTitle(for: .rename, isWatched: item.isWatched)) {
+                requestRename(item)
             }
-            Button("打开原网页") { store.openOriginal(item.id) }
-            if QueueRowMeta.localFileToReveal(
-                path: item.localFilePath,
-                exists: { FileManager.default.fileExists(atPath: $0) }
-            ) != nil {
-                Button("在访达中显示") { store.revealLocalFile(item.id) }
+        case .retryDownload:
+            Button(QueueRowMeta.visibleTitle(for: .retryDownload, isWatched: item.isWatched)) {
+                store.startDownload(for: item.id)
             }
+        case .openOriginal:
+            Button(QueueRowMeta.visibleTitle(for: .openOriginal, isWatched: item.isWatched)) {
+                store.openOriginal(item.id)
+            }
+        case .revealInFinder:
+            Button(QueueRowMeta.visibleTitle(for: .revealInFinder, isWatched: item.isWatched)) {
+                store.revealLocalFile(item.id)
+            }
+        case .divider:
             Divider()
-            Button("删除", role: .destructive) { itemToDelete = item }
+        case .delete:
+            Button(QueueRowMeta.visibleTitle(for: .delete, isWatched: item.isWatched), role: .destructive) {
+                itemToDelete = item
+            }
         }
+    }
+
+    private func requestRename(_ item: WatchItem) {
+        if store.selection != item.id {
+            store.selection = item.id
+            detailSelection = item.id
+        }
+        pendingRenameID = item.id
     }
 
     private func updateQueueDrag(_ draggedID: UUID, at location: CGPoint) {
@@ -399,15 +450,20 @@ private struct QueueRow: View, Equatable {
     let includesListTopGutter: Bool
     let select: () -> Void
     let rename: (String) -> Void
+    let pendingRename: Bool
+    let consumePendingRename: () -> Void
     @State private var isEditingTitle = false
     @State private var draftTitle = ""
     @State private var isHovering = false
+    @State private var lastSelectClickAt: Date?
+    @State private var titleClickState = QueueRowMeta.TitleClickState()
     @FocusState private var isTitleFocused: Bool
 
     static func == (lhs: QueueRow, rhs: QueueRow) -> Bool {
         lhs.item == rhs.item
             && lhs.isSelected == rhs.isSelected
             && lhs.includesListTopGutter == rhs.includesListTopGutter
+            && lhs.pendingRename == rhs.pendingRename
     }
 
     var body: some View {
@@ -425,17 +481,50 @@ private struct QueueRow: View, Equatable {
             }
         }
         .onHover { isHovering = $0 }
+        .onAppear {
+            if pendingRename, !isEditingTitle {
+                beginEditing()
+                consumePendingRename()
+            }
+        }
+        .onChange(of: pendingRename) { pending in
+            if pending {
+                beginEditing()
+                consumePendingRename()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .replayTextFocusShouldResign)) { notification in
+            guard isEditingTitle else { return }
+            finishEditing(reason: titleEditReason(from: notification))
+        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction(.default, select)
     }
 
     private func handleRowAction() {
-        if isSelected, NSApp.currentEvent?.clickCount == 2 {
-            beginEditing()
-            return
+        let reportedCount = NSApp.currentEvent?.clickCount ?? 1
+        let continuesPair: Bool
+        if let last = lastSelectClickAt,
+           Date().timeIntervalSince(last) <= NSEvent.doubleClickInterval {
+            continuesPair = true
+        } else {
+            continuesPair = false
         }
-        select()
+        let action: QueueRowMeta.TitleClickAction
+        (titleClickState, action) = QueueRowMeta.handleTitleClick(
+            state: titleClickState,
+            isSelected: isSelected,
+            clickCount: reportedCount,
+            continuesPair: continuesPair
+        )
+        lastSelectClickAt = Date()
+        switch action {
+        case .beginEditing:
+            beginEditing()
+        case .select:
+            select()
+        }
     }
 
     private var buttonLabel: some View {
@@ -502,11 +591,11 @@ private struct QueueRow: View, Equatable {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .medium))
                 .focused($isTitleFocused)
-                .onSubmit { finishEditing(save: true) }
-                .onExitCommand { finishEditing(save: false) }
+                .onSubmit { finishEditing(reason: .submit) }
+                .onExitCommand { finishEditing(reason: .escape) }
                 .onChange(of: isTitleFocused) { focused in
                     if !focused, isEditingTitle {
-                        finishEditing(save: true)
+                        finishEditing(reason: .focusLost)
                     }
                 }
                 .padding(.horizontal, 5)
@@ -522,25 +611,30 @@ private struct QueueRow: View, Equatable {
                 .foregroundStyle(OpenMyChrome.ink)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .help("双击已选中的条目可重命名")
+                .help("右键或双击已选中的条目可重命名")
         }
     }
 
+    private func titleEditReason(from notification: Notification) -> QueueRowMeta.TitleEditEndReason {
+        TextFocusResignReason.from(notification) == .escape ? .escape : .focusLost
+    }
+
     private func beginEditing() {
+        guard !isEditingTitle else { return }
         draftTitle = item.title
         isEditingTitle = true
+        let controller = PlaybackWindowFocusController.attached(to: NSApp.keyWindow)
+        controller?.setSwiftUITextFieldFocused(true)
         DispatchQueue.main.async {
+            controller?.setSwiftUITextFieldFocused(true)
             isTitleFocused = true
         }
     }
 
-    private func finishEditing(save: Bool) {
+    private func finishEditing(reason: QueueRowMeta.TitleEditEndReason) {
         guard isEditingTitle else { return }
-        if save {
-            let trimmed = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                rename(trimmed)
-            }
+        if case .save(let title) = QueueRowMeta.titleEditCommit(reason: reason, draft: draftTitle) {
+            rename(title)
         }
         isEditingTitle = false
         isTitleFocused = false

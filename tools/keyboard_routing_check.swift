@@ -16,6 +16,8 @@ struct KeyboardRoutingCheck {
         assertModifierCombinations()
         assertMissingPlayer()
         assertWindowFocusControllerClearsInitialResponder()
+        assertEscapeResignCarriesReason()
+        assertEscapeThenClickOtherFieldCommitsTitle()
 
         print("keyboard_routing_check=passed")
     }
@@ -86,6 +88,129 @@ struct KeyboardRoutingCheck {
 
         controller.detach()
         window.close()
+    }
+
+    private static func assertEscapeResignCarriesReason() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        var reasons: [String] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: .replayTextFocusShouldResign,
+            object: window,
+            queue: nil
+        ) { notification in
+            if let raw = notification.userInfo?[TextFocusResignReason.userInfoKey] as? String {
+                reasons.append(raw)
+            }
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            window.close()
+        }
+
+        PlaybackWindowFocusController.resign(in: window, reason: .escape)
+        precondition(
+            reasons.last == TextFocusResignReason.escape.rawValue,
+            "Esc 失焦必须带上 escape 原因，标题编辑才能取消而不是保存"
+        )
+
+        PlaybackWindowFocusController.resign(in: window, reason: .other)
+        precondition(reasons.last == TextFocusResignReason.other.rawValue)
+
+        let controller = PlaybackWindowFocusController()
+        controller.attach(to: window)
+        reasons.removeAll()
+        controller.resignTextFocus(reason: .escape)
+        precondition(reasons.last == TextFocusResignReason.escape.rawValue)
+        controller.detach()
+    }
+
+    private static func assertEscapeThenClickOtherFieldCommitsTitle() {
+        precondition(
+            PlaybackWindowFocusController.mouseDownAction(
+                hitsEditableText: true,
+                isEditingText: true,
+                hitsCurrentEditor: false
+            ) == .commitPreviousAndAllowNewTextFocus,
+            "标题编辑中点到另一个输入框，必须提交上一个字段"
+        )
+        precondition(
+            PlaybackWindowFocusController.mouseDownAction(
+                hitsEditableText: true,
+                isEditingText: true,
+                hitsCurrentEditor: true
+            ) == .allowNewTextFocus,
+            "点在当前编辑器内不得当成点走"
+        )
+        precondition(
+            PlaybackWindowFocusController.mouseDownAction(
+                hitsEditableText: true,
+                isEditingText: false,
+                hitsCurrentEditor: false
+            ) == .allowNewTextFocus
+        )
+        precondition(
+            PlaybackWindowFocusController.mouseDownAction(
+                hitsEditableText: false,
+                isEditingText: true,
+                hitsCurrentEditor: false
+            ) == .resignCurrent
+        )
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        var reasons: [TextFocusResignReason] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: .replayTextFocusShouldResign,
+            object: window,
+            queue: nil
+        ) { notification in
+            reasons.append(TextFocusResignReason.from(notification))
+        }
+        let titleField = NSTextField(string: "草稿")
+        titleField.isEditable = true
+        window.contentView = titleField
+        let controller = PlaybackWindowFocusController()
+        controller.attach(to: window)
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            controller.detach()
+            window.close()
+        }
+
+        window.makeFirstResponder(titleField)
+        controller.setSwiftUITextFieldFocused(true)
+        PlaybackWindowFocusController.resign(in: window, reason: .escape)
+        precondition(reasons.last == .escape)
+
+        window.makeFirstResponder(titleField)
+        controller.setSwiftUITextFieldFocused(true)
+        reasons.removeAll()
+        controller.performMouseDown(
+            hitsEditableText: true,
+            isEditingText: true,
+            hitsCurrentEditor: false
+        )
+        precondition(
+            reasons == [.other],
+            "Esc 之后点另一个输入框必须再发 other，不得沿用 escape。实际：\(reasons)"
+        )
+        let clickAwayReason = TextFocusResignReason.from(
+            Notification(
+                name: .replayTextFocusShouldResign,
+                object: window,
+                userInfo: [TextFocusResignReason.userInfoKey: reasons[0].rawValue]
+            )
+        )
+        precondition(clickAwayReason == .other, "标题点走必须读本次通知，不得读到上一轮 Esc")
     }
 
     private static func assertIdlePlaybackShortcuts() {

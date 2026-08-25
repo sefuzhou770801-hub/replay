@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return event
             case .resignTextFocus:
-                PlaybackWindowFocusController.resign(in: event.window)
+                PlaybackWindowFocusController.resign(in: event.window, reason: .escape)
                 return nil
             case .togglePlayback:
                 if !event.isARepeat {

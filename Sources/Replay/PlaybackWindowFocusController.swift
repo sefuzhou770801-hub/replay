@@ -4,6 +4,27 @@ extension Notification.Name {
     static let replayTextFocusShouldResign = Notification.Name("ReplayTextFocusShouldResign")
 }
 
+enum TextFocusResignReason: String {
+    case escape
+    case other
+
+    static let userInfoKey = "reason"
+
+    static func from(_ notification: Notification) -> TextFocusResignReason {
+        guard let raw = notification.userInfo?[userInfoKey] as? String,
+              let reason = TextFocusResignReason(rawValue: raw) else {
+            return .other
+        }
+        return reason
+    }
+}
+
+enum TextFocusMouseDownAction: Equatable {
+    case allowNewTextFocus
+    case commitPreviousAndAllowNewTextFocus
+    case resignCurrent
+}
+
 /// 窗口层焦点闸门：启动时不把键盘交给链接输入框，点击输入框以外立即失焦。
 /// SwiftUI 手势覆盖不到 AppKit 视频面和控制按钮，所以用窗口级鼠标监听。
 final class PlaybackWindowFocusController {
@@ -22,13 +43,35 @@ final class PlaybackWindowFocusController {
         return byWindow.object(forKey: window)
     }
 
-    static func resign(in window: NSWindow?) {
+    static func resign(in window: NSWindow?, reason: TextFocusResignReason = .other) {
         if let controller = attached(to: window) {
-            controller.resignTextFocus()
+            controller.resignTextFocus(reason: reason)
             return
         }
+        postResignNotification(window: window, reason: reason)
         window?.makeFirstResponder(nil)
-        NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
+    }
+
+    static func mouseDownAction(
+        hitsEditableText: Bool,
+        isEditingText: Bool,
+        hitsCurrentEditor: Bool
+    ) -> TextFocusMouseDownAction {
+        if hitsEditableText {
+            if isEditingText, !hitsCurrentEditor {
+                return .commitPreviousAndAllowNewTextFocus
+            }
+            return .allowNewTextFocus
+        }
+        return .resignCurrent
+    }
+
+    private static func postResignNotification(window: NSWindow?, reason: TextFocusResignReason) {
+        NotificationCenter.default.post(
+            name: .replayTextFocusShouldResign,
+            object: window,
+            userInfo: [TextFocusResignReason.userInfoKey: reason.rawValue]
+        )
     }
 
     func setSwiftUITextFieldFocused(_ focused: Bool) {
@@ -68,9 +111,9 @@ final class PlaybackWindowFocusController {
         swiftUITextFieldFocused = false
     }
 
-    func resignTextFocus() {
+    func resignTextFocus(reason: TextFocusResignReason = .other) {
         guard let window else { return }
-        clearTextFocus(in: window)
+        clearTextFocus(in: window, reason: reason)
     }
 
     @discardableResult
@@ -109,21 +152,71 @@ final class PlaybackWindowFocusController {
         }
     }
 
+    func performMouseDown(
+        hitsEditableText: Bool,
+        isEditingText: Bool,
+        hitsCurrentEditor: Bool
+    ) {
+        applyMouseDownAction(
+            Self.mouseDownAction(
+                hitsEditableText: hitsEditableText,
+                isEditingText: isEditingText,
+                hitsCurrentEditor: hitsCurrentEditor
+            )
+        )
+    }
+
     private func handleMouseDown(_ event: NSEvent) {
         guard let window else { return }
-        if event.window === window, clickHitsEditableText(event) {
-            allowTextFocus = true
+        if event.window !== window {
+            applyMouseDownAction(.resignCurrent)
             return
         }
+        applyMouseDownAction(
+            Self.mouseDownAction(
+                hitsEditableText: clickHitsEditableText(event),
+                isEditingText: PlaybackKeyboardRouting.isEditingText(in: window),
+                hitsCurrentEditor: clickHitsCurrentEditor(event)
+            )
+        )
+    }
 
-        allowTextFocus = false
-        if PlaybackKeyboardRouting.isEditingText(in: window) {
-            clearTextFocus(in: window)
+    private func applyMouseDownAction(_ action: TextFocusMouseDownAction) {
+        switch action {
+        case .allowNewTextFocus:
+            allowTextFocus = true
+        case .commitPreviousAndAllowNewTextFocus:
+            allowTextFocus = true
+            Self.postResignNotification(window: window, reason: .other)
+        case .resignCurrent:
+            allowTextFocus = false
+            if let window, PlaybackKeyboardRouting.isEditingText(in: window) {
+                clearTextFocus(in: window, reason: .other)
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.rejectUnsolicitedTextFocus()
+            }
         }
-        // SwiftUI @FocusState 可能在下一拍把输入框焦点抢回来，再清一次。
-        DispatchQueue.main.async { [weak self] in
-            self?.rejectUnsolicitedTextFocus()
+    }
+
+    private func clickHitsCurrentEditor(_ event: NSEvent) -> Bool {
+        guard let window = event.window else { return false }
+        let root = window.contentView?.superview ?? window.contentView
+        guard let root else { return false }
+        let hit = root.hitTest(event.locationInWindow)
+        guard let first = window.firstResponder else { return false }
+        if let hit, hit === first { return true }
+        if let firstView = first as? NSView, let hit {
+            if hit === firstView || hit.isDescendant(of: firstView) || firstView.isDescendant(of: hit) {
+                return true
+            }
         }
+        if let editor = first as? NSTextView, let field = editor.delegate as? NSView, let hit {
+            if hit === field || hit.isDescendant(of: field) || field.isDescendant(of: hit) {
+                return true
+            }
+        }
+        return false
     }
 
     private func clickHitsEditableText(_ event: NSEvent) -> Bool {
@@ -168,10 +261,11 @@ final class PlaybackWindowFocusController {
         return false
     }
 
-    private func clearTextFocus(in window: NSWindow) {
+    private func clearTextFocus(in window: NSWindow, reason: TextFocusResignReason = .other) {
         allowTextFocus = false
         swiftUITextFieldFocused = false
+        // 先广播原因，再卸第一响应者，避免标题编辑的失焦回调抢在 Esc 取消之前把草稿存掉。
+        Self.postResignNotification(window: window, reason: reason)
         window.makeFirstResponder(nil)
-        NotificationCenter.default.post(name: .replayTextFocusShouldResign, object: window)
     }
 }

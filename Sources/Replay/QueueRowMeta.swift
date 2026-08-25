@@ -41,4 +41,94 @@ enum QueueRowMeta {
         guard let path, !path.isEmpty, exists(path) else { return nil }
         return path
     }
+
+    enum ContextMenuItem: Equatable, Hashable {
+        case toggleWatched
+        case rename
+        case retryDownload
+        case openOriginal
+        case revealInFinder
+        case divider
+        case delete
+    }
+
+    enum TitleEditEndReason: Equatable {
+        case submit
+        case escape
+        case focusLost
+    }
+
+    enum TitleEditCommit: Equatable {
+        case save(String)
+        case discard
+    }
+
+    static func contextMenuItems(
+        state: DownloadState,
+        canRevealLocalFile: Bool
+    ) -> [ContextMenuItem] {
+        var items: [ContextMenuItem] = [.toggleWatched, .rename]
+        if state == .failed {
+            items.append(.retryDownload)
+        }
+        items.append(.openOriginal)
+        if canRevealLocalFile {
+            items.append(.revealInFinder)
+        }
+        items.append(contentsOf: [.divider, .delete])
+        return items
+    }
+
+    static func visibleTitle(for item: ContextMenuItem, isWatched: Bool) -> String {
+        switch item {
+        case .toggleWatched:
+            return isWatched ? "移回队列" : "标记已看"
+        case .rename:
+            return "重命名"
+        case .retryDownload:
+            return "重试下载"
+        case .openOriginal:
+            return "打开原网页"
+        case .revealInFinder:
+            return "在访达中显示"
+        case .divider:
+            return ""
+        case .delete:
+            return "删除"
+        }
+    }
+
+    struct TitleClickState: Equatable {
+        var selectedAtPairStart: Bool?
+    }
+
+    enum TitleClickAction: Equatable {
+        case beginEditing
+        case select
+    }
+
+    /// 第二击必须用第一击时的选中状态。两击之间 SwiftUI 重绘把 isSelected 改成 true 不得进编辑。
+    static func handleTitleClick(
+        state: TitleClickState,
+        isSelected: Bool,
+        clickCount: Int,
+        continuesPair: Bool
+    ) -> (TitleClickState, TitleClickAction) {
+        let isContinuation = (clickCount >= 2 || continuesPair) && state.selectedAtPairStart != nil
+        if isContinuation {
+            let selectedAtStart = state.selectedAtPairStart ?? false
+            return (TitleClickState(selectedAtPairStart: nil), selectedAtStart ? .beginEditing : .select)
+        }
+        return (TitleClickState(selectedAtPairStart: isSelected), .select)
+    }
+
+    static func titleEditCommit(reason: TitleEditEndReason, draft: String) -> TitleEditCommit {
+        switch reason {
+        case .escape:
+            return .discard
+        case .submit, .focusLost:
+            let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? .discard : .save(trimmed)
+        }
+    }
 }
