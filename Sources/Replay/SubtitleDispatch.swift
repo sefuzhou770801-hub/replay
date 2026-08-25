@@ -5,6 +5,9 @@ enum SubtitleDispatchSurface: Equatable {
 }
 
 enum SubtitleDispatchPolicy {
+    /// 与播放器 seek 共用的时间基。CMTime(seconds:preferredTimescale:) 按该分母截断。
+    static let seekTimescale: Int32 = 600
+
     /// 字幕只发给当前实际承载画面的表面。
     static func destination(
         isFloatingActive: Bool,
@@ -33,6 +36,17 @@ enum SubtitleDispatchPolicy {
         if let pendingSeekTime, pendingSeekTime.isFinite { return max(0, pendingSeekTime) }
         if playerTime.isFinite { return max(0, playerTime) }
         return 0
+    }
+
+    /// 句首跳转向句内取整：把秒数换成 600 时间基时向上取整，避免截断到句首前 1 毫秒。
+    static func quantizedSeekTicks(_ seconds: Double) -> Int64 {
+        guard seconds.isFinite else { return 0 }
+        if seconds <= 0 { return 0 }
+        return Int64((seconds * Double(seekTimescale)).rounded(.up))
+    }
+
+    static func quantizedSeekTime(_ seconds: Double) -> Double {
+        Double(quantizedSeekTicks(seconds)) / Double(seekTimescale)
     }
 }
 

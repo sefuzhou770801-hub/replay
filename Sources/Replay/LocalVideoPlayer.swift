@@ -1196,7 +1196,10 @@ struct LocalVideoPlayer: NSViewRepresentable {
         private func beginSeek(player: AVPlayer, to seekTime: Double, shouldPlay: Bool) {
             let requestID = seekSession.issue(time: seekTime)
             publishSubtitle(at: seekTime, animated: false)
-            let time = CMTime(seconds: seekTime, preferredTimescale: 600)
+            let time = CMTime(
+                value: SubtitleDispatchPolicy.quantizedSeekTicks(seekTime),
+                timescale: SubtitleDispatchPolicy.seekTimescale
+            )
             player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
                 guard let self,
                       self.seekSession.complete(id: requestID, finished: finished) != nil else {

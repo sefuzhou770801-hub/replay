@@ -132,6 +132,66 @@ struct SubtitleDispatchCheck {
         )
         precondition(cancelledLatest.pendingTime == nil)
 
+        let codez = VideoSubtitleTrack(cues: [
+            VideoSubtitleCue(
+                startTime: 96.475,
+                endTime: 98.356,
+                text: "No worries. Okay, take your time\n没关系。好的，慢慢来"
+            ),
+            VideoSubtitleCue(
+                startTime: 98.356,
+                endTime: 100.137,
+                text: "There's always tech, tech, tech trouble\n总是有技术问题"
+            ),
+            VideoSubtitleCue(
+                startTime: 112.325,
+                endTime: 113.726,
+                text: "exciting to to get a chance to chat\n令人兴奋，能有机会和她聊天"
+            ),
+            VideoSubtitleCue(
+                startTime: 113.766,
+                endTime: 114.766,
+                text: "with her\n和她"
+            )
+        ])
+
+        func truncatedByTimescale(_ seconds: Double) -> Double {
+            Double(Int64(seconds * Double(SubtitleDispatchPolicy.seekTimescale)))
+                / Double(SubtitleDispatchPolicy.seekTimescale)
+        }
+
+        func textAfterSeekConversion(_ requested: Double) -> String? {
+            VideoSubtitlePresentation.resolve(
+                track: codez,
+                isEnabled: true,
+                at: SubtitleDispatchPolicy.quantizedSeekTime(requested)
+            )?.text
+        }
+
+        precondition(truncatedByTimescale(98.356) == 98.355)
+        precondition(truncatedByTimescale(113.766) == 113.765)
+        precondition(
+            VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 98.355)?.text
+                == "No worries. Okay, take your time\n没关系。好的，慢慢来",
+            "自然播放到句首前 1ms 必须仍是上一句，向句内取整不得变成全局前向容差"
+        )
+        precondition(
+            VideoSubtitlePresentation.resolve(track: codez, isEnabled: true, at: 113.765)?.text
+                == "exciting to to get a chance to chat\n令人兴奋，能有机会和她聊天",
+            "句间短空隙的 hold-over 仍属上一句；截断时钟不得靠解析容差吞掉它"
+        )
+        precondition(
+            textAfterSeekConversion(98.356)
+                == "There's always tech, tech, tech trouble\n总是有技术问题",
+            "98.356 经 600 时间基换算后必须解析到目标句，实际：\(textAfterSeekConversion(98.356) ?? "nil")"
+        )
+        precondition(
+            textAfterSeekConversion(113.766) == "with her\n和她",
+            "113.766 经 600 时间基换算后必须解析到目标句，实际：\(textAfterSeekConversion(113.766) ?? "nil")"
+        )
+        precondition(SubtitleDispatchPolicy.quantizedSeekTime(98.356) >= 98.356)
+        precondition(SubtitleDispatchPolicy.quantizedSeekTime(113.766) >= 113.766)
+
         print("subtitle_dispatch_check=passed")
     }
 }
