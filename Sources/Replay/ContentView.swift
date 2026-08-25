@@ -774,10 +774,7 @@ private struct VideoDetail: View {
     @State private var seekRequest: PlayerSeekRequest?
     @State private var playback = PlaybackSnapshot.empty
     @State private var subtitleTrack: VideoSubtitleTrack?
-    @State private var isPlayerPrepared = false
-    @State private var lastPlayable = false
     @State private var userHasManuallySwitchedSidePane = false
-    @State private var playerPreparationTask: Task<Void, Never>?
     @State private var subtitleLoadTask: Task<Void, Never>?
     @State private var volumeHUDValue = PlaybackVolumePreference.load()
     @State private var volumeHUDVisible = false
@@ -795,7 +792,6 @@ private struct VideoDetail: View {
         .onAppear {
             userHasManuallySwitchedSidePane = false
             applyOpeningSidePaneMode()
-            syncPlayerReady()
             // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
             store.rescanLocalSubtitle(for: item.id) { path in
                 loadSubtitles(path: path)
@@ -808,13 +804,9 @@ private struct VideoDetail: View {
             }
         }
         .onDisappear {
-            cancelPlayerPreparation()
             subtitleLoadTask?.cancel()
             volumeHUDDismissalTask?.cancel()
         }
-        .onChange(of: item.state) { _ in syncPlayerReady() }
-        .onChange(of: item.localFilePath) { _ in syncPlayerReady() }
-        .onChange(of: item.hasSidePaneContent) { _ in syncPlayerReady() }
         .onChange(of: item.availableChapters.isEmpty) { isEmpty in
             recomputeSidePaneMode(hasChapters: !isEmpty)
         }
@@ -949,7 +941,7 @@ private struct VideoDetail: View {
                 PlayerStageLayout {
                     playerSurface
 
-                    if isItemPlayable, isPlayerPrepared {
+                    if isItemPlayable {
                         PlaybackControls(
                             snapshot: playback,
                             knownDuration: item.duration,
@@ -991,27 +983,23 @@ private struct VideoDetail: View {
     private var playerSurface: some View {
         ZStack(alignment: .bottom) {
             Group {
-                if isItemPlayable, let fileURL = item.localFileURL {
-                    if isPlayerPrepared {
-                        GeometryReader { geometry in
-                            LocalVideoPlayer(
-                                url: fileURL,
-                                title: item.title,
-                                author: item.author,
-                                resumeAt: item.resumablePosition,
-                                seekRequest: seekRequest,
-                                subtitleTrack: subtitleTrack,
-                                subtitlesEnabled: subtitlesEnabled,
-                                onProgress: { store.updatePlaybackPosition($0, for: item.id) },
-                                onStateChange: { playback = $0 },
-                                onVolumeChange: showVolumeHUD,
-                                onEnded: { store.markWatched(item.id) }
-                            )
-                            .id(fileURL)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                        }
-                    } else {
-                        playerLoadingState
+                if isItemPlayable, let fileURL = displayedItem.localFileURL {
+                    GeometryReader { geometry in
+                        LocalVideoPlayer(
+                            url: fileURL,
+                            title: item.title,
+                            author: item.author,
+                            resumeAt: item.resumablePosition,
+                            seekRequest: seekRequest,
+                            subtitleTrack: subtitleTrack,
+                            subtitlesEnabled: subtitlesEnabled,
+                            onProgress: { store.updatePlaybackPosition($0, for: item.id) },
+                            onStateChange: { playback = $0 },
+                            onVolumeChange: showVolumeHUD,
+                            onEnded: { store.markWatched(item.id) }
+                        )
+                        .id(fileURL)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                     }
                 } else {
                     downloadState
@@ -1037,10 +1025,15 @@ private struct VideoDetail: View {
         }
     }
 
+    /// 直接读队列当前值，不靠 `let item` 的 onChange 边沿。
+    private var displayedItem: WatchItem {
+        store.items.first(where: { $0.id == item.id }) ?? item
+    }
+
     private var isItemPlayable: Bool {
         PlayerReadyDecision.isPlayable(
-            state: item.state,
-            localFileExists: item.localFileURL != nil
+            state: displayedItem.state,
+            localFileExists: displayedItem.localFileURL != nil
         )
     }
 
@@ -1059,43 +1052,6 @@ private struct VideoDetail: View {
         )
         if next != current {
             sidePaneModeRaw = next.rawValue
-        }
-    }
-
-    private func syncPlayerReady() {
-        let playable = isItemPlayable
-        let signal = PlayerReadyDecision.loadSignal(
-            previousPlayable: lastPlayable,
-            currentPlayable: playable
-        )
-        lastPlayable = playable
-        switch signal {
-        case .load:
-            beginPlayerPreparation()
-        case .unload:
-            cancelPlayerPreparation()
-        case .none:
-            // 侧栏插入等布局切换可能取消尚未完成的装载；可播放但未装好时补一次。
-            if playable, !isPlayerPrepared {
-                beginPlayerPreparation()
-            }
-        }
-    }
-
-    private func cancelPlayerPreparation() {
-        playerPreparationTask?.cancel()
-        playerPreparationTask = nil
-        isPlayerPrepared = false
-    }
-
-    private func beginPlayerPreparation() {
-        playerPreparationTask?.cancel()
-        isPlayerPrepared = false
-        guard isItemPlayable else { return }
-        playerPreparationTask = Task {
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            isPlayerPrepared = true
         }
     }
 
@@ -1140,21 +1096,6 @@ private struct VideoDetail: View {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? nil
             : .easeOut(duration: 0.15)
-    }
-
-    private var playerLoadingState: some View {
-        ZStack {
-            if let image = ThumbnailImageCache.image(for: item.thumbnailFileURL) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .opacity(0.42)
-            }
-            Color.black.opacity(0.36)
-            ProgressView()
-                .controlSize(.large)
-                .tint(.white)
-        }
     }
 
     @ViewBuilder
