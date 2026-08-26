@@ -6,6 +6,8 @@ private final class PlayerSubtitleOverlayView: NSView {
     private let sourceTextField = NSTextField(labelWithString: "")
     private let translationTextField = NSTextField(labelWithString: "")
     private let textStack = NSStackView()
+    /// 推挤滚动的裁剪容器：纸带越界的部分在这里被裁掉，阴影留在外层不受影响。
+    private let clipView = NSView()
     private(set) var presentation: VideoSubtitlePresentation?
     private var animationGeneration = 0
     private var surfaceWidth: CGFloat = 800
@@ -83,11 +85,10 @@ private final class PlayerSubtitleOverlayView: NSView {
         let shouldAnimate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         if let presentation {
-            // 换句走滚动转场，对齐自带滚动字幕的观感：旧句上滑淡出、新句自下方滚入。
-            let rollsBetweenCues = chrome == .replace && shouldAnimate && !isHidden && window != nil
-            if rollsBetweenCues {
-                captureRollGhost()
-            }
+            // 换句走推挤滚动，对齐自带滚动字幕的观感：新句把旧句顶出框外。
+            let rollSnapshot: RollSnapshot? = (chrome == .replace && shouldAnimate && !isHidden && window != nil)
+                ? captureRollSnapshot()
+                : nil
             applyLineTexts(from: presentation)
             isHidden = false
             applyLayoutDecision()
@@ -101,8 +102,8 @@ private final class PlayerSubtitleOverlayView: NSView {
                 }
             } else {
                 alphaValue = 1
-                if rollsBetweenCues {
-                    rollInNewText()
+                if let rollSnapshot {
+                    runPushRoll(with: rollSnapshot)
                 }
             }
             return
@@ -149,6 +150,18 @@ private final class PlayerSubtitleOverlayView: NSView {
             textField.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         }
 
+        clipView.translatesAutoresizingMaskIntoConstraints = false
+        clipView.wantsLayer = true
+        clipView.layer?.masksToBounds = true
+        clipView.layer?.cornerRadius = 10
+        addSubview(clipView)
+        NSLayoutConstraint.activate([
+            clipView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            clipView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            clipView.topAnchor.constraint(equalTo: topAnchor),
+            clipView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
         textStack.translatesAutoresizingMaskIntoConstraints = false
         textStack.wantsLayer = true
         textStack.orientation = .vertical
@@ -156,67 +169,72 @@ private final class PlayerSubtitleOverlayView: NSView {
         textStack.spacing = 3
         textStack.addArrangedSubview(sourceTextField)
         textStack.addArrangedSubview(translationTextField)
-        addSubview(textStack)
+        clipView.addSubview(textStack)
         NSLayoutConstraint.activate([
-            textStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            textStack.topAnchor.constraint(equalTo: topAnchor, constant: 7),
-            textStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7)
+            textStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor, constant: 14),
+            textStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor, constant: -14),
+            textStack.topAnchor.constraint(equalTo: clipView.topAnchor, constant: 7),
+            textStack.bottomAnchor.constraint(equalTo: clipView.bottomAnchor, constant: -7)
         ])
         updateForSurfaceWidth(800)
     }
 
     private static let rollDuration: TimeInterval = 0.18
-    private static let rollDistance: CGFloat = 9
     private weak var rollGhostLayer: CALayer?
 
-    /// 把当前文本拍成快照层，上滑淡出；随后新文本从下方滚入，两段共用同一节奏。
-    private func captureRollGhost() {
-        guard let hostLayer = layer,
-              textStack.frame.width > 0,
-              let rep = textStack.bitmapImageRepForCachingDisplay(in: textStack.bounds) else { return }
+    private struct RollSnapshot {
+        let image: CGImage
+        let size: NSSize
+    }
+
+    private func captureRollSnapshot() -> RollSnapshot? {
+        guard textStack.frame.width > 0,
+              let rep = textStack.bitmapImageRepForCachingDisplay(in: textStack.bounds) else { return nil }
         textStack.cacheDisplay(in: textStack.bounds, to: rep)
+        guard let image = rep.cgImage else { return nil }
+        return RollSnapshot(image: image, size: textStack.bounds.size)
+    }
+
+    /// 推挤滚动：旧句与新句是同一条纸带，整体上移一格，永不同位，出框即被裁掉。
+    /// 位移取两代内容高度的较大者，保证旧句完全让位；纯位移不加淡出，与滚动字幕一致。
+    private func runPushRoll(with snapshot: RollSnapshot) {
+        layoutSubtreeIfNeeded()
+        guard let clipLayer = clipView.layer, let stackLayer = textStack.layer else { return }
         rollGhostLayer?.removeFromSuperlayer()
 
+        let newFrame = textStack.frame
         let ghost = CALayer()
-        ghost.contents = rep.cgImage
-        ghost.frame = textStack.frame
+        ghost.contents = snapshot.image
         ghost.contentsScale = window?.backingScaleFactor ?? 2
-        hostLayer.addSublayer(ghost)
+        ghost.frame = NSRect(
+            x: newFrame.midX - snapshot.size.width / 2,
+            y: newFrame.maxY - snapshot.size.height,
+            width: snapshot.size.width,
+            height: snapshot.size.height
+        )
+        clipLayer.addSublayer(ghost)
         rollGhostLayer = ghost
 
-        let rise = CABasicAnimation(keyPath: "position.y")
-        rise.fromValue = ghost.position.y
-        rise.toValue = ghost.position.y + Self.rollDistance
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1
-        fade.toValue = 0
-        let group = CAAnimationGroup()
-        group.animations = [rise, fade]
-        group.duration = Self.rollDuration
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        group.fillMode = .forwards
-        group.isRemovedOnCompletion = false
-        ghost.opacity = 0
-        ghost.add(group, forKey: "roll-out")
+        let stride = max(snapshot.size.height, newFrame.height) + 6
+        let pushOut = CABasicAnimation(keyPath: "transform.translation.y")
+        pushOut.fromValue = 0
+        pushOut.toValue = stride
+        pushOut.duration = Self.rollDuration
+        pushOut.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        pushOut.fillMode = .forwards
+        pushOut.isRemovedOnCompletion = false
+        ghost.add(pushOut, forKey: "push-out")
+
+        let pushIn = CABasicAnimation(keyPath: "transform.translation.y")
+        pushIn.fromValue = -stride
+        pushIn.toValue = 0
+        pushIn.duration = Self.rollDuration
+        pushIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        stackLayer.add(pushIn, forKey: "push-in")
+
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.rollDuration) { [weak ghost] in
             ghost?.removeFromSuperlayer()
         }
-    }
-
-    private func rollInNewText() {
-        guard let stackLayer = textStack.layer else { return }
-        let rise = CABasicAnimation(keyPath: "transform.translation.y")
-        rise.fromValue = -Self.rollDistance
-        rise.toValue = 0
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0
-        fade.toValue = 1
-        let group = CAAnimationGroup()
-        group.animations = [rise, fade]
-        group.duration = Self.rollDuration
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        stackLayer.add(group, forKey: "roll-in")
     }
 
     private func applyLineTexts(from presentation: VideoSubtitlePresentation) {
