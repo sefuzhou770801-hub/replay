@@ -1240,7 +1240,7 @@ private struct VideoDetail: View {
                     .font(.system(size: 38, weight: .light))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.white)
-                Text(item.state == .failed ? "下载失败" : "正在存到本地")
+                Text(stateTitle)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(.white)
                 if item.state == .downloading {
@@ -1251,14 +1251,33 @@ private struct VideoDetail: View {
                         .font(.callout)
                         .foregroundStyle(.white.opacity(0.68))
                 } else if item.state == .failed {
-                    Text(item.errorMessage ?? "未知的下载错误")
+                    Text(QueueRowMeta.failureSummary(from: item.errorMessage))
                         .font(.callout)
                         .foregroundStyle(.white.opacity(0.68))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 520)
-                        .textSelection(.enabled)
-                    Button("重试下载") { store.startDownload(for: item.id) }
-                        .watchGlassButton(prominent: true)
+                    if let rawError = item.errorMessage, !rawError.isEmpty {
+                        DisclosureGroup("详情") {
+                            Text(rawError)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white.opacity(0.55))
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: 480, alignment: .leading)
+                                .textSelection(.enabled)
+                                .padding(.top, 6)
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(maxWidth: 200)
+                    }
+                    Button {
+                        store.startDownload(for: item.id)
+                    } label: {
+                        Text("重试下载")
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                    }
+                    .watchGlassButton(prominent: true)
                 } else if item.state == .queued {
                     // 排队与重试倒计时期间没有传输发生，不放转圈，直说状态。
                     Text(item.progressLabel.isEmpty ? "排队中" : item.progressLabel)
@@ -1279,6 +1298,15 @@ private struct VideoDetail: View {
         case .failed: return "exclamationmark.triangle.fill"
         case .queued: return "clock.fill"
         default: return "arrow.down.circle.fill"
+        }
+    }
+
+    /// 标题不假装在动：倒计时与排队期用等待时态，真正传输时才是进行时。
+    private var stateTitle: String {
+        switch item.state {
+        case .failed: return "下载失败"
+        case .queued: return item.progressLabel.contains("重试") ? "等待重试" : "排队等待"
+        default: return "正在存到本地"
         }
     }
 

@@ -48,6 +48,29 @@ enum QueueRowMeta {
         return title
     }
 
+    /// 失败原因人话化：一级信息一句话，原始报错收进「详情」展开区。
+    static func failureSummary(from raw: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "未知的下载错误" }
+        let lower = raw.lowercased()
+        if lower.contains("ssl") || lower.contains("unable to download webpage")
+            || lower.contains("timed out") || lower.contains("connection") || lower.contains("network") {
+            return "网络连接中断，无法获取视频页面"
+        }
+        if lower.contains("404") || lower.contains("not found") || lower.contains("unavailable") {
+            return "视频不存在或已下架"
+        }
+        if lower.contains("private") || lower.contains("login") || lower.contains("sign in") || lower.contains("cookies") {
+            return "视频需要登录或没有访问权限"
+        }
+        if lower.contains("geo") || lower.contains("country") || lower.contains("region") {
+            return "视频在当前地区不可用"
+        }
+        if lower.contains("no space") || lower.contains("disk full") {
+            return "磁盘空间不足"
+        }
+        return "下载工具报错，展开详情查看原文"
+    }
+
     /// 小于此位移仍当单击，避免微抖被认成排序。
     static let reorderDragThreshold: CGFloat = 12
 

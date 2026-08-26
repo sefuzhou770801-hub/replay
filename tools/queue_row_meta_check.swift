@@ -27,6 +27,13 @@ struct QueueRowMetaCheck {
         precondition(readyWithProgress.isEmpty)
         precondition(QueueRowMeta.statusText(state: .ready, progressLabel: "续播 99:28").isEmpty)
 
+        // 失败原因人话化：网络类归一句话，未知报错走兜底，空值有缺省。
+        precondition(QueueRowMeta.failureSummary(from: "ERROR: [generic] x: Unable to download webpage: [SSL: UNEXPECTED_EOF] ...") == "网络连接中断，无法获取视频页面")
+        precondition(QueueRowMeta.failureSummary(from: "HTTP Error 404: Not Found") == "视频不存在或已下架")
+        precondition(QueueRowMeta.failureSummary(from: "Sign in to confirm your age") == "视频需要登录或没有访问权限")
+        precondition(QueueRowMeta.failureSummary(from: "某种没见过的报错") == "下载工具报错，展开详情查看原文")
+        precondition(QueueRowMeta.failureSummary(from: nil) == "未知的下载错误")
+
         // 标题剥作者前缀：作者已单独显示时去重，改名与数据层仍用原始标题。
         precondition(QueueRowMeta.displayTitle(title: "Codez - SpaceXAI engineer", author: "Codez") == "SpaceXAI engineer")
         precondition(QueueRowMeta.displayTitle(title: "Codez – 长破折号case", author: "Codez") == "长破折号case")
