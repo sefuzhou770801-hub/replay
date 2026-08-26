@@ -14,8 +14,10 @@ struct SourceBrandMark: View {
         case .x:
             xMark
         case .unknown:
+            // 跟随所在行的前景色：正常行是次要灰，失败行随警示色一起变。
             Circle()
-                .fill(Color.secondary.opacity(0.7))
+                .fill(.foreground)
+                .opacity(0.7)
                 .frame(width: 6, height: 6)
         }
     }

@@ -1259,6 +1259,11 @@ private struct VideoDetail: View {
                         .textSelection(.enabled)
                     Button("重试下载") { store.startDownload(for: item.id) }
                         .watchGlassButton(prominent: true)
+                } else if item.state == .queued {
+                    // 排队与重试倒计时期间没有传输发生，不放转圈，直说状态。
+                    Text(item.progressLabel.isEmpty ? "排队中" : item.progressLabel)
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.68))
                 } else {
                     ProgressView()
                         .controlSize(.large)
@@ -1270,7 +1275,11 @@ private struct VideoDetail: View {
     }
 
     private var stateIcon: String {
-        item.state == .failed ? "exclamationmark.triangle.fill" : "arrow.down.circle.fill"
+        switch item.state {
+        case .failed: return "exclamationmark.triangle.fill"
+        case .queued: return "clock.fill"
+        default: return "arrow.down.circle.fill"
+        }
     }
 
     private func seekToChapter(_ chapter: VideoChapter) {
