@@ -27,6 +27,14 @@ struct QueueRowMetaCheck {
         precondition(readyWithProgress.isEmpty)
         precondition(QueueRowMeta.statusText(state: .ready, progressLabel: "续播 99:28").isEmpty)
 
+        // 标题剥作者前缀：作者已单独显示时去重，改名与数据层仍用原始标题。
+        precondition(QueueRowMeta.displayTitle(title: "Codez - SpaceXAI engineer", author: "Codez") == "SpaceXAI engineer")
+        precondition(QueueRowMeta.displayTitle(title: "Codez – 长破折号case", author: "Codez") == "长破折号case")
+        precondition(QueueRowMeta.displayTitle(title: "Codez - SpaceXAI", author: "") == "Codez - SpaceXAI")
+        precondition(QueueRowMeta.displayTitle(title: "SpaceXAI engineer", author: "Codez") == "SpaceXAI engineer")
+        precondition(QueueRowMeta.displayTitle(title: "Codez - ", author: "Codez") == "Codez - ")
+        precondition(QueueRowMeta.displayTitle(title: "Codezilla - 大战哥斯拉", author: "Codez") == "Codezilla - 大战哥斯拉")
+
         precondition(QueueRowMeta.statusText(state: .queued, progressLabel: "排队中") == "排队中")
         precondition(QueueRowMeta.statusText(state: .queued, progressLabel: "低电量模式已暂停") == "低电量模式已暂停")
         precondition(QueueRowMeta.statusText(state: .queued, progressLabel: "等待网络连接") == "等待网络连接")

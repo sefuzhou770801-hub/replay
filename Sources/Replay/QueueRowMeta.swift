@@ -34,6 +34,20 @@ enum QueueRowMeta {
         }
     }
 
+    /// 作者名已单独显示时，标题里的「作者 - 」前缀是重复信息，显示层剥掉；改名编辑仍用原始标题。
+    static func displayTitle(title: String, author: String) -> String {
+        let trimmedAuthor = author.trimmingCharacters(in: .whitespaces)
+        guard !trimmedAuthor.isEmpty else { return title }
+        for separator in [" - ", " – ", " — "] {
+            let prefix = trimmedAuthor + separator
+            if title.hasPrefix(prefix) {
+                let rest = String(title.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+                if !rest.isEmpty { return rest }
+            }
+        }
+        return title
+    }
+
     /// 小于此位移仍当单击，避免微抖被认成排序。
     static let reorderDragThreshold: CGFloat = 12
 

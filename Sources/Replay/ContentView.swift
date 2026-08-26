@@ -605,7 +605,7 @@ private struct QueueRow: View, Equatable {
                         .strokeBorder(OpenMyChrome.fieldBorder)
                 }
         } else {
-            Text(item.title)
+            Text(QueueRowMeta.displayTitle(title: item.title, author: item.author))
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(OpenMyChrome.ink)
                 .lineLimit(2)
@@ -956,7 +956,7 @@ private struct VideoDetail: View {
     private var centerPaneHeader: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
+                Text(QueueRowMeta.displayTitle(title: item.title, author: item.author))
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(OpenMyChrome.ink)
                     .lineLimit(1)
@@ -1001,9 +1001,9 @@ private struct VideoDetail: View {
                     store.openOriginal(item.id)
                 } label: {
                     if usesCompactToolbarActions {
-                        Image(systemName: "safari")
+                        Image(systemName: "arrow.up.forward")
                     } else {
-                        Label("打开原网页", systemImage: "safari")
+                        Label("打开原网页", systemImage: "arrow.up.forward")
                     }
                 }
                 .watchGlassButton()
@@ -1013,11 +1013,11 @@ private struct VideoDetail: View {
                     store.toggleWatched(item.id)
                 } label: {
                     if usesCompactToolbarActions {
-                        Image(systemName: item.isWatched ? "arrow.uturn.backward" : "checkmark")
+                        Image(systemName: item.isWatched ? "arrow.uturn.backward" : "checkmark.circle")
                     } else {
                         Label(
                             item.isWatched ? "移回队列" : "标记已看",
-                            systemImage: item.isWatched ? "arrow.uturn.backward" : "checkmark"
+                            systemImage: item.isWatched ? "arrow.uturn.backward" : "checkmark.circle"
                         )
                     }
                 }
@@ -2035,7 +2035,7 @@ private struct ChapterSidebar: View {
                                 Text(formatTime(chapter.startTime))
                                     .font(.system(size: 11).monospacedDigit())
                                     .foregroundStyle(isCurrentChapter(chapter) ? Color.primary : Color.secondary)
-                                    .frame(width: timeColumnWidth, alignment: .leading)
+                                    .frame(width: timeColumnWidth, alignment: .trailing)
                                 Text(chapter.title)
                                     .font(.system(size: 13, weight: isCurrentChapter(chapter) ? .semibold : .regular))
                                     .foregroundStyle(.primary)
@@ -2087,7 +2087,7 @@ private struct ChapterSidebar: View {
                                     Text(formatTime(cue.startTime))
                                         .font(.system(size: 11).monospacedDigit())
                                         .foregroundStyle(isCurrent ? Color.primary : Color.secondary)
-                                        .frame(width: timeColumnWidth, alignment: .leading)
+                                        .frame(width: timeColumnWidth, alignment: .trailing)
                                     cueTextStack(cue.text, isCurrent: isCurrent)
                                     Spacer(minLength: 0)
                                 }
