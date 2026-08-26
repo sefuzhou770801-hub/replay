@@ -1888,6 +1888,7 @@ private struct ChapterSidebar: View {
     /// 持久化视图选择：章节列表 / 歌词轴。
     @AppStorage("sidePaneMode") private var sidePaneModeRaw = SidePaneMode.chapters.rawValue
     @State private var activeCueIndex: Int?
+    @State private var displayCues: [VideoSubtitleCue] = []
     @State private var autoFollowSuspendedUntil = Date.distantPast
     @State private var ignoreLiveScrollUntil = Date.distantPast
     /// 递增以触发 ScrollViewReader 滚到当前句（含暂停结束后的定时恢复）。
@@ -1932,6 +1933,7 @@ private struct ChapterSidebar: View {
         }
         .background(OpenMyChrome.canvas)
         .onAppear {
+            displayCues = SubtitleSentenceBlocks.aggregate(subtitleCues)
             lastTrackedTime = currentTime
             refreshActiveCue(at: currentTime)
         }
@@ -1943,7 +1945,8 @@ private struct ChapterSidebar: View {
             // 含暂停态 seek 的乐观时间更新：按目标时刻立刻重算高亮。
             refreshActiveCue(at: newTime)
         }
-        .onChange(of: subtitleCues.count) { _ in
+        .onChange(of: subtitleCues) { newCues in
+            displayCues = SubtitleSentenceBlocks.aggregate(newCues)
             activeCueIndex = nil
             lastTrackedTime = Double.nan
             refreshActiveCue(at: currentTime)
@@ -2076,8 +2079,8 @@ private struct ChapterSidebar: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
-                        ForEach(subtitleCues.indices, id: \.self) { index in
-                            let cue = subtitleCues[index]
+                        ForEach(displayCues.indices, id: \.self) { index in
+                            let cue = displayCues[index]
                             let isCurrent = activeCueIndex == index
                             Button {
                                 // 暂停时播放时间流可能不推进；按目标 cue 立即刷新高亮与滚动。
@@ -2151,8 +2154,8 @@ private struct ChapterSidebar: View {
 
     /// 点歌词条目：先按目标索引刷新高亮/滚动，再交给播放器 seek。
     private func jumpToCue(index: Int) {
-        guard subtitleCues.indices.contains(index) else { return }
-        let cue = subtitleCues[index]
+        guard displayCues.indices.contains(index) else { return }
+        let cue = displayCues[index]
         activeCueIndex = index
         // 用户主动点句：立即跟随，不要被「手动滚动暂停」挡住。
         autoFollowSuspendedUntil = .distantPast
@@ -2225,7 +2228,7 @@ private struct ChapterSidebar: View {
         lastTrackedTime = time
         let isSeekJump = previousTime.isFinite && abs(time - previousTime) > seekJumpThreshold
 
-        let resolved = Self.cueIndex(at: time, in: subtitleCues, hint: activeCueIndex)
+        let resolved = Self.cueIndex(at: time, in: displayCues, hint: activeCueIndex)
         if resolved != activeCueIndex {
             activeCueIndex = resolved
         }

@@ -96,3 +96,8 @@ compile_and_run sidebar_hittest \
     "$project_dir/Sources/Replay/OpenMyChrome.swift" \
     "$project_dir/Sources/Replay/SidebarQueueLayout.swift" \
     "$project_dir/tools/sidebar_hittest_check.swift"
+
+compile_and_run subtitle_blocks \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
+    "$project_dir/tools/subtitle_blocks_check.swift"
