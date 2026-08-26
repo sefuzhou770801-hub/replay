@@ -10,7 +10,7 @@ iconset_dir="$project_dir/.build/Replay.iconset"
 bundled_tools_dir="${REPLAY_BUNDLED_TOOLS_DIR:-}"
 install_app="${REPLAY_INSTALL_APP:-1}"
 launch_app="${REPLAY_LAUNCH_APP:-$install_app}"
-installed_app="${REPLAY_INSTALLED_APP_PATH:-/Applications/Replay.app}"
+installed_app="${REPLAY_INSTALLED_APP_PATH:-/Applications/seesee.app}"
 
 # The macOS 27 Command Line Tools SDK currently omits SwiftUI macro plugins.
 # Prefer the adjacent macOS 26 compatibility SDK only for that toolchain.

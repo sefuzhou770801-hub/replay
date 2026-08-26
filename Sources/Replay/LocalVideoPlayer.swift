@@ -12,7 +12,6 @@ private final class PlayerSubtitleOverlayView: NSView {
     private let sourcePill = NSView()
     private let translationPill = NSView()
     /// 滚动期间挂在裁剪层上的上下渐隐，滚完即摘。
-    private let rollFadeMask = CAGradientLayer()
     private(set) var presentation: VideoSubtitlePresentation?
     private var animationGeneration = 0
     private var surfaceWidth: CGFloat = 800
@@ -194,8 +193,8 @@ private final class PlayerSubtitleOverlayView: NSView {
         updateForSurfaceWidth(800)
     }
 
-    private static let rollDuration: TimeInterval = 0.18
-    private static let rollTiming = CAMediaTimingFunction(controlPoints: 0.2, 0, 0.4, 1)
+    private static let rollDuration: TimeInterval = 0.25
+    private static let rollTiming = CAMediaTimingFunction(name: .easeInEaseOut)
     private weak var rollGhostLayer: CALayer?
 
     private struct RollSnapshot {
@@ -211,10 +210,9 @@ private final class PlayerSubtitleOverlayView: NSView {
         return RollSnapshot(image: image, size: textStack.bounds.size)
     }
 
-    /// 推挤滚动：旧句与新句是同一条纸带，整体上移一格，永不同位，出框即被裁掉。
-    /// 位移取两代内容高度的较大者，保证旧句完全让位；纯位移不加淡出，与滚动字幕一致。
+    /// 纯渐隐：旧句原地淡出、新句原地淡入，零位移（三方案对比老板选定 C）。
+    /// 交叉期两句同位半透明叠印，全场最安静；框高变化与渐隐共用同一节奏。
     private func runPushRoll(with snapshot: RollSnapshot) {
-        // 框高变化与纸带位移共用同一节奏：布局走隐式动画，纸带走显式动画（v5 评审建议）。
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.rollDuration
             context.timingFunction = Self.rollTiming
@@ -237,38 +235,25 @@ private final class PlayerSubtitleOverlayView: NSView {
         clipLayer.addSublayer(ghost)
         rollGhostLayer = ghost
 
-        // 滚动期间上下渐隐，出入文字淡出而非被硬裁；静止时不挂遮罩，底条边缘保持锐利。
-        rollFadeMask.colors = [
-            NSColor.clear.cgColor, NSColor.white.cgColor,
-            NSColor.white.cgColor, NSColor.clear.cgColor
-        ]
-        rollFadeMask.locations = [0, 0.18, 0.82, 1]
-        rollFadeMask.frame = clipView.bounds
-        clipLayer.mask = rollFadeMask
+        let fadeOut = CABasicAnimation(keyPath: "opacity")
+        fadeOut.fromValue = 1
+        fadeOut.toValue = 0
+        fadeOut.duration = Self.rollDuration
+        fadeOut.timingFunction = Self.rollTiming
+        fadeOut.fillMode = .forwards
+        fadeOut.isRemovedOnCompletion = false
+        ghost.opacity = 0
+        ghost.add(fadeOut, forKey: "fade-out")
 
-        let stride = max(snapshot.size.height, newFrame.height) + 6
-        let pushOut = CABasicAnimation(keyPath: "transform.translation.y")
-        pushOut.fromValue = 0
-        pushOut.toValue = stride
-        pushOut.duration = Self.rollDuration
-        pushOut.timingFunction = Self.rollTiming
-        pushOut.fillMode = .forwards
-        pushOut.isRemovedOnCompletion = false
-        ghost.add(pushOut, forKey: "push-out")
+        let fadeIn = CABasicAnimation(keyPath: "opacity")
+        fadeIn.fromValue = 0
+        fadeIn.toValue = 1
+        fadeIn.duration = Self.rollDuration
+        fadeIn.timingFunction = Self.rollTiming
+        stackLayer.add(fadeIn, forKey: "fade-in")
 
-        let pushIn = CABasicAnimation(keyPath: "transform.translation.y")
-        pushIn.fromValue = -stride
-        pushIn.toValue = 0
-        pushIn.duration = Self.rollDuration
-        pushIn.timingFunction = Self.rollTiming
-        stackLayer.add(pushIn, forKey: "push-in")
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rollDuration) { [weak self, weak ghost] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rollDuration) { [weak ghost] in
             ghost?.removeFromSuperlayer()
-            // 仍在滚下一句时遮罩归下一次调用管，只有静止后才摘。
-            if let self, self.rollGhostLayer == nil || self.rollGhostLayer === ghost {
-                self.clipView.layer?.mask = nil
-            }
         }
     }
 
