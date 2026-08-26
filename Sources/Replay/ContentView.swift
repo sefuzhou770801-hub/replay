@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var windowWidth: CGFloat = 1320
     @State private var urlBarFrame: CGRect = .zero
     @State private var pendingRenameID: UUID?
+    @AppStorage("sidebarWatchedCollapsed") private var watchedCollapsed = false
     @FocusState private var isURLFieldFocused: Bool
 
     var body: some View {
@@ -172,19 +173,26 @@ struct ContentView: View {
 
                             if !archivedItems.isEmpty {
                                 Section {
-                                    ForEach(archivedItems) { item in
-                                        sidebarRow(
-                                            item,
-                                            includesListTopGutter: queueItems.isEmpty
-                                                && item.id == archivedItems.first?.id
-                                        )
+                                    if !watchedCollapsed {
+                                        ForEach(archivedItems) { item in
+                                            sidebarRow(
+                                                item,
+                                                includesListTopGutter: queueItems.isEmpty
+                                                    && item.id == archivedItems.first?.id
+                                            )
+                                        }
                                     }
                                 } header: {
                                     SidebarSectionHeader(
                                         title: "已看",
                                         count: archivedItems.count,
-                                        systemImage: "checkmark.circle"
-                                    )
+                                        systemImage: "checkmark.circle",
+                                        isCollapsed: watchedCollapsed
+                                    ) {
+                                        withAnimation(.easeOut(duration: 0.15)) {
+                                            watchedCollapsed.toggle()
+                                        }
+                                    }
                                     .padding(.top, queueItems.isEmpty ? 0 : 10)
                                 }
                             }
@@ -783,21 +791,37 @@ private struct SidebarSectionHeader: View {
     let title: String
     let count: Int
     let systemImage: String
+    var isCollapsed = false
+    var onToggle: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-            Text(title)
-            Text("\(count)")
-                .monospacedDigit()
-                .foregroundStyle(OpenMyChrome.faint)
-            Spacer()
+        Button {
+            onToggle?()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                Text(title)
+                Text("\(count)")
+                    .monospacedDigit()
+                    .foregroundStyle(OpenMyChrome.faint)
+                Spacer()
+                if onToggle != nil {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(OpenMyChrome.faint)
+                        .rotationEffect(.degrees(isCollapsed ? -90 : 0))
+                }
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(OpenMyChrome.muted)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(OpenMyChrome.canvas)
+            .contentShape(Rectangle())
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(OpenMyChrome.muted)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(OpenMyChrome.canvas)
+        .buttonStyle(.plain)
+        .disabled(onToggle == nil)
+        .help(onToggle == nil ? "" : (isCollapsed ? "展开已看" : "收起已看"))
     }
 }
 
@@ -1888,6 +1912,7 @@ private struct ChapterSidebar: View {
     /// 持久化视图选择：章节列表 / 歌词轴。
     @AppStorage("sidePaneMode") private var sidePaneModeRaw = SidePaneMode.chapters.rawValue
     @State private var activeCueIndex: Int?
+    @State private var displayCues: [VideoSubtitleCue] = []
     @State private var autoFollowSuspendedUntil = Date.distantPast
     @State private var ignoreLiveScrollUntil = Date.distantPast
     /// 递增以触发 ScrollViewReader 滚到当前句（含暂停结束后的定时恢复）。
@@ -1932,6 +1957,7 @@ private struct ChapterSidebar: View {
         }
         .background(OpenMyChrome.canvas)
         .onAppear {
+            displayCues = SubtitleSentenceBlocks.aggregate(subtitleCues)
             lastTrackedTime = currentTime
             refreshActiveCue(at: currentTime)
         }
@@ -1943,7 +1969,8 @@ private struct ChapterSidebar: View {
             // 含暂停态 seek 的乐观时间更新：按目标时刻立刻重算高亮。
             refreshActiveCue(at: newTime)
         }
-        .onChange(of: subtitleCues.count) { _ in
+        .onChange(of: subtitleCues) { newCues in
+            displayCues = SubtitleSentenceBlocks.aggregate(newCues)
             activeCueIndex = nil
             lastTrackedTime = Double.nan
             refreshActiveCue(at: currentTime)
@@ -2076,8 +2103,8 @@ private struct ChapterSidebar: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
-                        ForEach(subtitleCues.indices, id: \.self) { index in
-                            let cue = subtitleCues[index]
+                        ForEach(displayCues.indices, id: \.self) { index in
+                            let cue = displayCues[index]
                             let isCurrent = activeCueIndex == index
                             Button {
                                 // 暂停时播放时间流可能不推进；按目标 cue 立即刷新高亮与滚动。
@@ -2151,8 +2178,8 @@ private struct ChapterSidebar: View {
 
     /// 点歌词条目：先按目标索引刷新高亮/滚动，再交给播放器 seek。
     private func jumpToCue(index: Int) {
-        guard subtitleCues.indices.contains(index) else { return }
-        let cue = subtitleCues[index]
+        guard displayCues.indices.contains(index) else { return }
+        let cue = displayCues[index]
         activeCueIndex = index
         // 用户主动点句：立即跟随，不要被「手动滚动暂停」挡住。
         autoFollowSuspendedUntil = .distantPast
@@ -2225,7 +2252,7 @@ private struct ChapterSidebar: View {
         lastTrackedTime = time
         let isSeekJump = previousTime.isFinite && abs(time - previousTime) > seekJumpThreshold
 
-        let resolved = Self.cueIndex(at: time, in: subtitleCues, hint: activeCueIndex)
+        let resolved = Self.cueIndex(at: time, in: displayCues, hint: activeCueIndex)
         if resolved != activeCueIndex {
             activeCueIndex = resolved
         }
