@@ -83,7 +83,8 @@ enum SubtitleBlocksCheck {
         precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("在Twitter上叫Potato。")
             == "在\u{2009}Twitter\u{2009}上叫\u{2009}Potato。")
         precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("E结尾的") == "E\u{2009}结尾的")
-        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("Lauren Tan 我想") == "Lauren Tan 我想")
+        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("Lauren Tan 我想") == "Lauren Tan\u{2009}我想")
+        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("I am Potato on Twitter") == "I am Potato on Twitter")
         precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("纯中文不变") == "纯中文不变")
         precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("pure english") == "pure english")
 

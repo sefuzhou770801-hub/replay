@@ -70,17 +70,36 @@ enum SubtitleSentenceBlocks {
     }
 
     /// 中西文排版规则：中文与拉丁字母或数字相接处垫窄空格（U+2009），只作用于显示层。
-    /// 覆盖「在Twitter上」「E结尾的」「Lauren Tan我想」全部边界；已有空格处不重复垫。
+    /// 缺空格处补垫；边界上既有的普通空格也归一为窄空格，避免同屏两档间距并存。
     static func withCJKLatinSpacing(_ text: String) -> String {
         guard !text.isEmpty else { return text }
         var result = ""
         var previous: Character?
+        var pendingSpaces = 0
         for character in text {
-            if let previous, needsGap(previous, character) {
-                result.append("\u{2009}")
+            if character == " " {
+                pendingSpaces += 1
+                continue
+            }
+            if let previous {
+                if pendingSpaces > 0 {
+                    if needsGap(previous, character) {
+                        result.append("\u{2009}")
+                    } else {
+                        result.append(String(repeating: " ", count: pendingSpaces))
+                    }
+                } else if needsGap(previous, character) {
+                    result.append("\u{2009}")
+                }
+            } else if pendingSpaces > 0 {
+                result.append(String(repeating: " ", count: pendingSpaces))
             }
             result.append(character)
             previous = character
+            pendingSpaces = 0
+        }
+        if pendingSpaces > 0 {
+            result.append(String(repeating: " ", count: pendingSpaces))
         }
         return result
     }

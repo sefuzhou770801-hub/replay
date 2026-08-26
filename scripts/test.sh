@@ -53,6 +53,7 @@ compile_and_run power_mode \
 compile_and_run playback_command \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/SubtitleOverlayLayout.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
     "$project_dir/Sources/Replay/SubtitleDispatch.swift" \
     "$project_dir/Sources/Replay/LocalVideoPlayer.swift" \
     "$project_dir/tools/playback_command_check.swift"
