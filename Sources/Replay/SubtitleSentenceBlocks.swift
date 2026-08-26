@@ -18,7 +18,7 @@ enum SubtitleSentenceBlocks {
         func flush() {
             guard fragmentCount > 0 else { return }
             let source = sourceParts.joined(separator: " ").trimmingCharacters(in: .whitespaces)
-            let translation = translationParts.joined().trimmingCharacters(in: .whitespaces)
+            let translation = joinTranslation(translationParts).trimmingCharacters(in: .whitespaces)
             let text = [source, translation].filter { !$0.isEmpty }.joined(separator: "\n")
             if !text.isEmpty {
                 blocks.append(VideoSubtitleCue(startTime: blockStart, endTime: blockEnd, text: text))
@@ -67,5 +67,19 @@ enum SubtitleSentenceBlocks {
     static func endsClause(_ text: String) -> Bool {
         guard let last = text.trimmingCharacters(in: .whitespaces).last else { return false }
         return "，、；：,;:".contains(last)
+    }
+
+    /// 中文片段直接相连；相接处任一侧是拉丁字母或数字时垫一个空格（如「Lauren Tan 我想…」）。
+    static func joinTranslation(_ parts: [String]) -> String {
+        var result = ""
+        for part in parts {
+            if let tail = result.last, let head = part.first,
+               tail.isASCII && (tail.isLetter || tail.isNumber)
+                || head.isASCII && (head.isLetter || head.isNumber) {
+                result += " "
+            }
+            result += part
+        }
+        return result
     }
 }

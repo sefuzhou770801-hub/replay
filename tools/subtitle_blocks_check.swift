@@ -70,6 +70,15 @@ enum SubtitleBlocksCheck {
         precondition(clause.count == 2, "分句落刀失效，实际 \(clause.count)")
         precondition(clause[0].text.components(separatedBy: "\n")[1].hasSuffix("，"))
 
+        // 8. 拉丁与中文相接处垫空格，中文之间不垫。
+        let spaced = SubtitleSentenceBlocks.aggregate([
+            cue(0, 1, "Lauren Tan\nLauren Tan"),
+            cue(1, 2, "I guess not many people know\n我想没多少人知道我的姓"),
+            cue(2, 3, "my last name\n名。"),
+        ])
+        precondition(spaced.count == 1)
+        precondition(spaced[0].text.components(separatedBy: "\n")[1] == "Lauren Tan 我想没多少人知道我的姓名。", spaced[0].text)
+
         print("subtitle_blocks_check=passed")
     }
 }

@@ -198,7 +198,13 @@ private final class PlayerSubtitleOverlayView: NSView {
     /// 推挤滚动：旧句与新句是同一条纸带，整体上移一格，永不同位，出框即被裁掉。
     /// 位移取两代内容高度的较大者，保证旧句完全让位；纯位移不加淡出，与滚动字幕一致。
     private func runPushRoll(with snapshot: RollSnapshot) {
-        layoutSubtreeIfNeeded()
+        // 框高变化与纸带位移共用同一节奏：布局走隐式动画，纸带走显式动画（v5 评审建议）。
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.rollDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            layoutSubtreeIfNeeded()
+        }
         guard let clipLayer = clipView.layer, let stackLayer = textStack.layer else { return }
         rollGhostLayer?.removeFromSuperlayer()
 
