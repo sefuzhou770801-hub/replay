@@ -18,7 +18,7 @@ enum SubtitleSentenceBlocks {
         func flush() {
             guard fragmentCount > 0 else { return }
             let source = sourceParts.joined(separator: " ").trimmingCharacters(in: .whitespaces)
-            let translation = joinTranslation(translationParts).trimmingCharacters(in: .whitespaces)
+            let translation = translationParts.joined().trimmingCharacters(in: .whitespaces)
             let text = [source, translation].filter { !$0.isEmpty }.joined(separator: "\n")
             if !text.isEmpty {
                 blocks.append(VideoSubtitleCue(startTime: blockStart, endTime: blockEnd, text: text))
@@ -69,17 +69,33 @@ enum SubtitleSentenceBlocks {
         return "，、；：,;:".contains(last)
     }
 
-    /// 中文片段直接相连；相接处任一侧是拉丁字母或数字时垫一个空格（如「Lauren Tan 我想…」）。
-    static func joinTranslation(_ parts: [String]) -> String {
+    /// 中西文排版规则：中文与拉丁字母或数字相接处垫窄空格（U+2009），只作用于显示层。
+    /// 覆盖「在Twitter上」「E结尾的」「Lauren Tan我想」全部边界；已有空格处不重复垫。
+    static func withCJKLatinSpacing(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
         var result = ""
-        for part in parts {
-            if let tail = result.last, let head = part.first,
-               tail.isASCII && (tail.isLetter || tail.isNumber)
-                || head.isASCII && (head.isLetter || head.isNumber) {
-                result += " "
+        var previous: Character?
+        for character in text {
+            if let previous, needsGap(previous, character) {
+                result.append("\u{2009}")
             }
-            result += part
+            result.append(character)
+            previous = character
         }
         return result
+    }
+
+    private static func isCJK(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first else { return false }
+        let value = Int(scalar.value)
+        return (0x4E00...0x9FFF).contains(value) || (0x3400...0x4DBF).contains(value)
+    }
+
+    private static func isLatinAlnum(_ character: Character) -> Bool {
+        character.isASCII && (character.isLetter || character.isNumber)
+    }
+
+    private static func needsGap(_ a: Character, _ b: Character) -> Bool {
+        isCJK(a) && isLatinAlnum(b) || isLatinAlnum(a) && isCJK(b)
     }
 }

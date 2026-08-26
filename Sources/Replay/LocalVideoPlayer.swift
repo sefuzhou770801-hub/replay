@@ -245,8 +245,9 @@ private final class PlayerSubtitleOverlayView: NSView {
 
     private func applyLineTexts(from presentation: VideoSubtitlePresentation) {
         let lines = VideoSubtitlePresentation.displayLines(from: presentation.text)
-        sourceTextField.stringValue = lines.first ?? ""
-        translationTextField.stringValue = lines.dropFirst().joined(separator: " ")
+        // 中西文垫窄空格是全局排版规则，浮层与右栏一致。
+        sourceTextField.stringValue = SubtitleSentenceBlocks.withCJKLatinSpacing(lines.first ?? "")
+        translationTextField.stringValue = SubtitleSentenceBlocks.withCJKLatinSpacing(lines.dropFirst().joined(separator: " "))
         translationTextField.isHidden = translationTextField.stringValue.isEmpty
     }
 

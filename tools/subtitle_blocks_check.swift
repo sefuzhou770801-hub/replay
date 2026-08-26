@@ -70,14 +70,22 @@ enum SubtitleBlocksCheck {
         precondition(clause.count == 2, "分句落刀失效，实际 \(clause.count)")
         precondition(clause[0].text.components(separatedBy: "\n")[1].hasSuffix("，"))
 
-        // 8. 拉丁与中文相接处垫空格，中文之间不垫。
+        // 8. 聚合层直接拼接不垫空格，排版交给显示层。
         let spaced = SubtitleSentenceBlocks.aggregate([
             cue(0, 1, "Lauren Tan\nLauren Tan"),
             cue(1, 2, "I guess not many people know\n我想没多少人知道我的姓"),
             cue(2, 3, "my last name\n名。"),
         ])
         precondition(spaced.count == 1)
-        precondition(spaced[0].text.components(separatedBy: "\n")[1] == "Lauren Tan 我想没多少人知道我的姓名。", spaced[0].text)
+        precondition(spaced[0].text.components(separatedBy: "\n")[1] == "Lauren Tan我想没多少人知道我的姓名。", spaced[0].text)
+
+        // 9. 显示层中西文垫窄空格（U+2009）：全部边界，已有空格不重复垫，纯中文纯英文不动。
+        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("在Twitter上叫Potato。")
+            == "在\u{2009}Twitter\u{2009}上叫\u{2009}Potato。")
+        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("E结尾的") == "E\u{2009}结尾的")
+        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("Lauren Tan 我想") == "Lauren Tan 我想")
+        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("纯中文不变") == "纯中文不变")
+        precondition(SubtitleSentenceBlocks.withCJKLatinSpacing("pure english") == "pure english")
 
         print("subtitle_blocks_check=passed")
     }

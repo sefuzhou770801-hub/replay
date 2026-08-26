@@ -2199,25 +2199,23 @@ private struct ChapterSidebar: View {
         let isDuplicated = lines.count >= 2 && translation == lines[0]
 
         return VStack(alignment: .leading, spacing: 2) {
+            // 句块高度自适应，不做行数钳制：字幕栏的职责是完整呈现，裁字不可接受。
             if lines.count >= 2, !isDuplicated {
-                Text(lines[0])
+                Text(SubtitleSentenceBlocks.withCJKLatinSpacing(lines[0]))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(lines.dropFirst().joined(separator: "\n"))
+                Text(SubtitleSentenceBlocks.withCJKLatinSpacing(lines.dropFirst().joined(separator: "\n")))
                     .font(.system(size: 13, weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(isDuplicated ? translation : (lines.first ?? text))
+                Text(SubtitleSentenceBlocks.withCJKLatinSpacing(isDuplicated ? translation : (lines.first ?? text)))
                     .font(.system(size: 13, weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
