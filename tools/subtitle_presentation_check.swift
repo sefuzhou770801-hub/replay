@@ -148,6 +148,24 @@ struct SubtitlePresentationCheck {
             "延续句切到下一句时浮层应保持可见"
         )
 
+        // 字幕三档：仅译文丢原文行；无译文的 cue 在仅译文档下不显示；关档一律无呈现；循环顺序固定。
+        precondition(
+            VideoSubtitlePresentation.resolve(track: bilingual, mode: .translationOnly, at: 1)?.text == "我以前听过"
+        )
+        precondition(
+            VideoSubtitlePresentation.resolve(track: bilingual, mode: .bilingual, at: 1)?.text
+                == "I've heard this before\n我以前听过"
+        )
+        precondition(VideoSubtitlePresentation.resolve(track: bilingual, mode: .off, at: 1) == nil)
+        let sourceOnly = VideoSubtitleTrack(cues: [
+            VideoSubtitleCue(startTime: 0, endTime: 2, text: "english only line")
+        ])
+        precondition(VideoSubtitlePresentation.resolve(track: sourceOnly, mode: .translationOnly, at: 1) == nil)
+        precondition(VideoSubtitlePresentation.resolve(track: sourceOnly, mode: .bilingual, at: 1) != nil)
+        precondition(SubtitleDisplayMode.bilingual.next == .translationOnly)
+        precondition(SubtitleDisplayMode.translationOnly.next == .off)
+        precondition(SubtitleDisplayMode.off.next == .bilingual)
+
         print("subtitle_presentation_check=passed")
     }
 }

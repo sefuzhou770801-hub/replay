@@ -6,8 +6,13 @@ private final class PlayerSubtitleOverlayView: NSView {
     private let sourceTextField = NSTextField(labelWithString: "")
     private let translationTextField = NSTextField(labelWithString: "")
     private let textStack = NSStackView()
-    /// 推挤滚动的裁剪容器：纸带越界的部分在这里被裁掉，阴影留在外层不受影响。
+    /// 推挤滚动的裁剪容器：纸带越界的部分在这里被裁掉。
     private let clipView = NSView()
+    /// 每行一条贴身底条，对齐原生字幕的观感。
+    private let sourcePill = NSView()
+    private let translationPill = NSView()
+    /// 滚动期间挂在裁剪层上的上下渐隐，滚完即摘。
+    private let rollFadeMask = CAGradientLayer()
     private(set) var presentation: VideoSubtitlePresentation?
     private var animationGeneration = 0
     private var surfaceWidth: CGFloat = 800
@@ -131,12 +136,8 @@ private final class PlayerSubtitleOverlayView: NSView {
     private func configure() {
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.78).cgColor
-        layer?.cornerRadius = 10
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOpacity = 0.5
-        layer?.shadowRadius = 8
-        layer?.shadowOffset = NSSize(width: 0, height: -3)
+        // 原生样式：整块大底框退役，每行文字各自一条贴身底条（见下方 pill 装配）。
+        layer?.backgroundColor = NSColor.clear.cgColor
         alphaValue = 0
         isHidden = true
 
@@ -153,7 +154,6 @@ private final class PlayerSubtitleOverlayView: NSView {
         clipView.translatesAutoresizingMaskIntoConstraints = false
         clipView.wantsLayer = true
         clipView.layer?.masksToBounds = true
-        clipView.layer?.cornerRadius = 10
         addSubview(clipView)
         NSLayoutConstraint.activate([
             clipView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -162,19 +162,34 @@ private final class PlayerSubtitleOverlayView: NSView {
             clipView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
+        for (pill, field) in [(sourcePill, sourceTextField), (translationPill, translationTextField)] {
+            pill.translatesAutoresizingMaskIntoConstraints = false
+            pill.wantsLayer = true
+            pill.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.75).cgColor
+            pill.layer?.cornerRadius = 8
+            field.translatesAutoresizingMaskIntoConstraints = false
+            pill.addSubview(field)
+            NSLayoutConstraint.activate([
+                field.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 12),
+                field.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -12),
+                field.topAnchor.constraint(equalTo: pill.topAnchor, constant: 4),
+                field.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -4)
+            ])
+        }
+
         textStack.translatesAutoresizingMaskIntoConstraints = false
         textStack.wantsLayer = true
         textStack.orientation = .vertical
         textStack.alignment = .centerX
-        textStack.spacing = 3
-        textStack.addArrangedSubview(sourceTextField)
-        textStack.addArrangedSubview(translationTextField)
+        textStack.spacing = 4
+        textStack.addArrangedSubview(sourcePill)
+        textStack.addArrangedSubview(translationPill)
         clipView.addSubview(textStack)
         NSLayoutConstraint.activate([
-            textStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor, constant: 14),
-            textStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor, constant: -14),
-            textStack.topAnchor.constraint(equalTo: clipView.topAnchor, constant: 7),
-            textStack.bottomAnchor.constraint(equalTo: clipView.bottomAnchor, constant: -7)
+            textStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+            textStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
+            textStack.topAnchor.constraint(equalTo: clipView.topAnchor, constant: 4),
+            textStack.bottomAnchor.constraint(equalTo: clipView.bottomAnchor, constant: -4)
         ])
         updateForSurfaceWidth(800)
     }
@@ -221,6 +236,15 @@ private final class PlayerSubtitleOverlayView: NSView {
         clipLayer.addSublayer(ghost)
         rollGhostLayer = ghost
 
+        // 滚动期间上下渐隐，出入文字淡出而非被硬裁；静止时不挂遮罩，底条边缘保持锐利。
+        rollFadeMask.colors = [
+            NSColor.clear.cgColor, NSColor.white.cgColor,
+            NSColor.white.cgColor, NSColor.clear.cgColor
+        ]
+        rollFadeMask.locations = [0, 0.18, 0.82, 1]
+        rollFadeMask.frame = clipView.bounds
+        clipLayer.mask = rollFadeMask
+
         let stride = max(snapshot.size.height, newFrame.height) + 6
         let pushOut = CABasicAnimation(keyPath: "transform.translation.y")
         pushOut.fromValue = 0
@@ -238,8 +262,12 @@ private final class PlayerSubtitleOverlayView: NSView {
         pushIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
         stackLayer.add(pushIn, forKey: "push-in")
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rollDuration) { [weak ghost] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rollDuration) { [weak self, weak ghost] in
             ghost?.removeFromSuperlayer()
+            // 仍在滚下一句时遮罩归下一次调用管，只有静止后才摘。
+            if let self, self.rollGhostLayer == nil || self.rollGhostLayer === ghost {
+                self.clipView.layer?.mask = nil
+            }
         }
     }
 
@@ -248,7 +276,10 @@ private final class PlayerSubtitleOverlayView: NSView {
         // 中西文垫窄空格是全局排版规则，浮层与右栏一致。
         sourceTextField.stringValue = SubtitleSentenceBlocks.withCJKLatinSpacing(lines.first ?? "")
         translationTextField.stringValue = SubtitleSentenceBlocks.withCJKLatinSpacing(lines.dropFirst().joined(separator: " "))
+        sourceTextField.isHidden = sourceTextField.stringValue.isEmpty
         translationTextField.isHidden = translationTextField.stringValue.isEmpty
+        sourcePill.isHidden = sourceTextField.isHidden
+        translationPill.isHidden = translationTextField.isHidden
     }
 
     private func applyLayoutDecision() {
@@ -271,7 +302,10 @@ private final class PlayerSubtitleOverlayView: NSView {
     private func clearText() {
         sourceTextField.stringValue = ""
         translationTextField.stringValue = ""
+        sourceTextField.isHidden = true
         translationTextField.isHidden = true
+        sourcePill.isHidden = true
+        translationPill.isHidden = true
         sourceTextField.preferredMaxLayoutWidth = 0
         translationTextField.preferredMaxLayoutWidth = 0
     }
@@ -1043,7 +1077,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
     let resumeAt: Double
     let seekRequest: PlayerSeekRequest?
     let subtitleTrack: VideoSubtitleTrack?
-    let subtitlesEnabled: Bool
+    let subtitleMode: SubtitleDisplayMode
     let onProgress: (Double) -> Void
     let onStateChange: (PlaybackSnapshot) -> Void
     let onVolumeChange: (Double) -> Void
@@ -1070,7 +1104,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
         )
         view.addGestureRecognizer(click)
         context.coordinator.load(url: url, title: title, author: author, resumeAt: resumeAt, into: view)
-        context.coordinator.updateSubtitles(track: subtitleTrack, isEnabled: subtitlesEnabled)
+        context.coordinator.updateSubtitles(track: subtitleTrack, mode: subtitleMode)
         return view
     }
 
@@ -1088,11 +1122,11 @@ struct LocalVideoPlayer: NSViewRepresentable {
     func updateNSView(_ view: PictureInPicturePlayerView, context: Context) {
         if context.coordinator.currentURL != url {
             context.coordinator.load(url: url, title: title, author: author, resumeAt: resumeAt, into: view)
-            context.coordinator.updateSubtitles(track: subtitleTrack, isEnabled: subtitlesEnabled)
+            context.coordinator.updateSubtitles(track: subtitleTrack, mode: subtitleMode)
             return
         }
         context.coordinator.updateMetadata(title: title, author: author)
-        context.coordinator.updateSubtitles(track: subtitleTrack, isEnabled: subtitlesEnabled)
+        context.coordinator.updateSubtitles(track: subtitleTrack, mode: subtitleMode)
         if let seekRequest {
             context.coordinator.seek(to: seekRequest)
         }
@@ -1133,7 +1167,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
         private var currentTitle = ""
         private var currentAuthor = ""
         private var subtitleTrack: VideoSubtitleTrack?
-        private var subtitlesEnabled = false
+        private var subtitleDisplayMode: SubtitleDisplayMode = .off
         fileprivate var currentURL: URL?
 
         init(
@@ -1243,9 +1277,9 @@ struct LocalVideoPlayer: NSViewRepresentable {
             }
         }
 
-        func updateSubtitles(track: VideoSubtitleTrack?, isEnabled: Bool) {
+        func updateSubtitles(track: VideoSubtitleTrack?, mode: SubtitleDisplayMode) {
             subtitleTrack = track
-            subtitlesEnabled = isEnabled
+            subtitleDisplayMode = mode
             publishSubtitle(at: subtitleClockTime(playerTime: player?.currentTime().seconds ?? 0), animated: false)
         }
 
@@ -1770,7 +1804,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
         private func publishSubtitle(at time: Double, animated: Bool) {
             let presentation = VideoSubtitlePresentation.resolve(
                 track: subtitleTrack,
-                isEnabled: subtitlesEnabled,
+                mode: subtitleDisplayMode,
                 at: time
             )
             let destination = SubtitleDispatchPolicy.destination(
@@ -1845,7 +1879,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
             currentTitle = ""
             currentAuthor = ""
             subtitleTrack = nil
-            subtitlesEnabled = false
+            subtitleDisplayMode = .off
         }
 
         deinit {

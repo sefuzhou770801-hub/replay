@@ -889,7 +889,7 @@ private struct PlayerStageLayout: Layout {
 
 private struct VideoDetail: View {
     @EnvironmentObject private var store: QueueStore
-    @AppStorage("subtitlesEnabled") private var subtitlesEnabled = false
+    @State private var subtitleMode: SubtitleDisplayMode = .off
     @AppStorage("chaptersPresented") private var chaptersPresented = true
     @AppStorage("sidePaneMode") private var sidePaneModeRaw = SidePaneMode.chapters.rawValue
     @State private var seekRequest: PlayerSeekRequest?
@@ -912,12 +912,16 @@ private struct VideoDetail: View {
         .navigationTitle("")
         .onAppear {
             userHasManuallySwitchedSidePane = false
+            subtitleMode = SubtitleModeStore.mode(for: item.id)
             applyOpeningSidePaneMode()
             // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
             store.rescanLocalSubtitle(for: item.id) { path in
                 loadSubtitles(path: path)
             }
             collapseSidebarForNarrowChapterLayoutIfNeeded()
+        }
+        .onChange(of: item.id) { newID in
+            subtitleMode = SubtitleModeStore.mode(for: newID)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.rescanLocalSubtitle(for: item.id) { path in
@@ -1073,8 +1077,8 @@ private struct VideoDetail: View {
                             toggleMute: { PlaybackCommandCenter.shared.toggleMute() },
                             setPlaybackRate: { PlaybackCommandCenter.shared.setPlaybackRate(to: $0) },
                             hasSubtitles: subtitleTrack != nil,
-                            subtitlesEnabled: subtitlesEnabled,
-                            toggleSubtitles: { subtitlesEnabled.toggle() }
+                            subtitleMode: subtitleMode,
+                            toggleSubtitles: cycleSubtitleMode
                         )
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1113,7 +1117,7 @@ private struct VideoDetail: View {
                             resumeAt: item.resumablePosition,
                             seekRequest: seekRequest,
                             subtitleTrack: subtitleTrack,
-                            subtitlesEnabled: subtitlesEnabled,
+                            subtitleMode: subtitleMode,
                             onProgress: { store.updatePlaybackPosition($0, for: item.id) },
                             onStateChange: { playback = $0 },
                             onVolumeChange: showVolumeHUD,
@@ -1317,6 +1321,12 @@ private struct VideoDetail: View {
         applyPlaybackTimeOptimistically(chapter.startTime)
     }
 
+    /// 字幕三档循环：双语、仅译文、关，逐视频记忆。
+    private func cycleSubtitleMode() {
+        subtitleMode = subtitleMode.next
+        SubtitleModeStore.set(subtitleMode, for: item.id)
+    }
+
     private func seekToTime(_ time: Double) {
         seekRequest = PlayerSeekRequest(time: time, shouldPlay: playback.isPlaying)
         store.updatePlaybackPosition(time, for: item.id)
@@ -1421,8 +1431,16 @@ private struct PlaybackControls: View {
     let toggleMute: () -> Void
     let setPlaybackRate: (Double) -> Void
     let hasSubtitles: Bool
-    let subtitlesEnabled: Bool
+    let subtitleMode: SubtitleDisplayMode
     let toggleSubtitles: () -> Void
+
+    private var subtitleModeHelp: String {
+        switch subtitleMode {
+        case .bilingual: return "双语字幕，点击换成仅译文"
+        case .translationOnly: return "仅显示译文，点击关闭字幕"
+        case .off: return "字幕已关，点击打开双语字幕"
+        }
+    }
     @State private var scrubTime: Double?
 
     var body: some View {
@@ -1494,12 +1512,10 @@ private struct PlaybackControls: View {
             )
 
             PlayerControlButton(
-                systemImage: "captions.bubble",
-                help: hasSubtitles
-                    ? (subtitlesEnabled ? "关闭字幕" : "打开字幕")
-                    : "没有可用的字幕",
+                systemImage: subtitleMode == .translationOnly ? "character.bubble" : "captions.bubble",
+                help: hasSubtitles ? subtitleModeHelp : "没有可用的字幕",
                 isEnabled: hasSubtitles,
-                isSelected: subtitlesEnabled && hasSubtitles,
+                isSelected: subtitleMode != .off && hasSubtitles,
                 action: toggleSubtitles
             )
 

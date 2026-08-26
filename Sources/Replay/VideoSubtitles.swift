@@ -29,11 +29,37 @@ struct VideoSubtitlePresentation: Equatable, Identifiable, Sendable {
         isEnabled: Bool,
         at time: Double
     ) -> VideoSubtitlePresentation? {
-        guard isEnabled, let track, time.isFinite else { return nil }
+        resolve(track: track, mode: isEnabled ? .bilingual : .off, at: time)
+    }
+
+    static func resolve(
+        track: VideoSubtitleTrack?,
+        mode: SubtitleDisplayMode,
+        at time: Double
+    ) -> VideoSubtitlePresentation? {
+        guard mode != .off, let track, time.isFinite else { return nil }
+        let base: VideoSubtitlePresentation?
         if let cue = track.cue(at: time) {
-            return presentation(for: cue)
+            base = presentation(for: cue)
+        } else {
+            base = holdOverPresentation(track: track, at: time)
         }
-        return holdOverPresentation(track: track, at: time)
+        guard let base else { return nil }
+        return applying(mode, to: base)
+    }
+
+    /// 仅译文档：丢掉原文行只留译文；没有译文的 cue（纯原文轨）不显示。
+    private static func applying(
+        _ mode: SubtitleDisplayMode,
+        to presentation: VideoSubtitlePresentation
+    ) -> VideoSubtitlePresentation? {
+        guard mode == .translationOnly else { return presentation }
+        let lines = displayLines(from: presentation.text)
+        guard lines.count >= 2 else { return nil }
+        return VideoSubtitlePresentation(
+            id: presentation.id,
+            text: lines.dropFirst().joined(separator: "\n")
+        )
     }
 
     /// 连续相同行折叠为一行：原文与译文相同时只显示一次。
@@ -69,6 +95,41 @@ struct VideoSubtitlePresentation: Equatable, Identifiable, Sendable {
         let gap = next.startTime - previous.endTime
         guard gap > 0, gap <= interCueHoldThreshold, time < next.startTime else { return nil }
         return presentation(for: previous)
+    }
+}
+
+/// 字幕浮层的三档显示：双语、仅译文、关；按钮按此顺序循环，逐视频记忆。
+enum SubtitleDisplayMode: String, CaseIterable, Sendable {
+    case bilingual
+    case translationOnly
+    case off
+
+    var next: SubtitleDisplayMode {
+        switch self {
+        case .bilingual: return .translationOnly
+        case .translationOnly: return .off
+        case .off: return .bilingual
+        }
+    }
+}
+
+/// 逐视频的字幕档位记忆；没记过的视频沿用旧全局开关的默认。
+enum SubtitleModeStore {
+    private static let key = "subtitleModePerVideo"
+    private static let legacyKey = "subtitlesEnabled"
+
+    static func mode(for id: UUID) -> SubtitleDisplayMode {
+        let dict = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        if let raw = dict[id.uuidString], let mode = SubtitleDisplayMode(rawValue: raw) {
+            return mode
+        }
+        return UserDefaults.standard.bool(forKey: legacyKey) ? .bilingual : .off
+    }
+
+    static func set(_ mode: SubtitleDisplayMode, for id: UUID) {
+        var dict = UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:]
+        dict[id.uuidString] = mode.rawValue
+        UserDefaults.standard.set(dict, forKey: key)
     }
 }
 
