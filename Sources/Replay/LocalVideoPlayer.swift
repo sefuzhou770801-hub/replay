@@ -379,16 +379,16 @@ final class FloatingVideoPlayerView: AVPlayerView {
     }
 
     private func configureReturnButton() {
-        let symbol = NSImage(systemSymbolName: "pip.exit", accessibilityDescription: "回到 openvideo")
-            ?? NSImage(systemSymbolName: "arrow.up.backward.and.arrow.down.forward", accessibilityDescription: "回到 openvideo")
+        let symbol = NSImage(systemSymbolName: "pip.exit", accessibilityDescription: "回到 seesee")
+            ?? NSImage(systemSymbolName: "arrow.up.backward.and.arrow.down.forward", accessibilityDescription: "回到 seesee")
         returnButton.image = symbol?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
         )
         returnButton.imagePosition = .imageOnly
         returnButton.isBordered = false
         returnButton.contentTintColor = .white
-        returnButton.toolTip = "回到 openvideo"
-        returnButton.setAccessibilityLabel("回到 openvideo")
+        returnButton.toolTip = "回到 seesee"
+        returnButton.setAccessibilityLabel("回到 seesee")
         returnButton.target = self
         returnButton.action = #selector(returnToMainWindow)
         returnButton.translatesAutoresizingMaskIntoConstraints = false
@@ -663,7 +663,7 @@ enum NowPlayingInfoBuilder {
         snapshot: PlaybackSnapshot
     ) -> [String: Any] {
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: title.isEmpty ? "openvideo" : title,
+            MPMediaItemPropertyTitle: title.isEmpty ? "seesee" : title,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: snapshot.currentTime,
             MPNowPlayingInfoPropertyPlaybackRate: snapshot.isPlaying ? snapshot.playbackRate : 0,
@@ -714,7 +714,7 @@ final class SystemMediaController {
     static let shared = SystemMediaController()
 
     private var isStarted = false
-    private var title = "openvideo"
+    private var title = "seesee"
     private var author = ""
     private var snapshot = PlaybackSnapshot.empty
     private weak var activePlayer: AVPlayer?

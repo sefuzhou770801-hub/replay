@@ -39,7 +39,7 @@ struct ContentView: View {
         .onPreferenceChange(URLBarFramePreferenceKey.self) { urlBarFrame = $0 }
         .background {
             ZStack {
-                WindowStyleConfigurator(title: store.selectedItem?.title ?? "openvideo")
+                WindowStyleConfigurator(title: store.selectedItem?.title ?? "seesee")
                     .frame(width: 0, height: 0)
 
                 WindowWidthReader { width in
@@ -2541,7 +2541,7 @@ private struct EmptyLibraryView: View {
                     )
                 Text(isDropTarget ? "松手存入队列" : "随时可以开始")
                     .font(.title2.weight(.semibold))
-                Text("复制视频链接后按 ⌘V。openvideo 会下载一份干净的离线副本，并记住你看到哪儿。")
+                Text("复制视频链接后按 ⌘V。seesee 会下载一份干净的离线副本，并记住你看到哪儿。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
