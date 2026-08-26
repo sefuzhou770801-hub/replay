@@ -194,8 +194,8 @@ private final class PlayerSubtitleOverlayView: NSView {
         updateForSurfaceWidth(800)
     }
 
-    private static let rollDuration: TimeInterval = 0.22
-    private static let rollDistance: CGFloat = 12
+    private static let rollDuration: TimeInterval = 0.18
+    private static let rollTiming = CAMediaTimingFunction(controlPoints: 0.2, 0, 0.4, 1)
     private weak var rollGhostLayer: CALayer?
 
     private struct RollSnapshot {
@@ -211,13 +211,13 @@ private final class PlayerSubtitleOverlayView: NSView {
         return RollSnapshot(image: image, size: textStack.bounds.size)
     }
 
-    /// 滑动加交叉渐隐：旧句上滑一小段同时淡出（加速离场），新句自下方滑入同时淡入（减速到位）。
-    /// 位移刻意小于行高，过渡主要由透明度承担，观感对齐系统级文字切换的柔和渐变。
+    /// 推挤滚动：旧句与新句是同一条纸带，整体上移一格，永不同位，出框即被裁掉。
+    /// 位移取两代内容高度的较大者，保证旧句完全让位；纯位移不加淡出，与滚动字幕一致。
     private func runPushRoll(with snapshot: RollSnapshot) {
         // 框高变化与纸带位移共用同一节奏：布局走隐式动画，纸带走显式动画（v5 评审建议）。
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.rollDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.timingFunction = Self.rollTiming
             context.allowsImplicitAnimation = true
             layoutSubtreeIfNeeded()
         }
@@ -246,32 +246,22 @@ private final class PlayerSubtitleOverlayView: NSView {
         rollFadeMask.frame = clipView.bounds
         clipLayer.mask = rollFadeMask
 
-        let exitRise = CABasicAnimation(keyPath: "transform.translation.y")
-        exitRise.fromValue = 0
-        exitRise.toValue = Self.rollDistance
-        let exitFade = CABasicAnimation(keyPath: "opacity")
-        exitFade.fromValue = 1
-        exitFade.toValue = 0
-        let exit = CAAnimationGroup()
-        exit.animations = [exitRise, exitFade]
-        exit.duration = Self.rollDuration * 0.75
-        exit.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        exit.fillMode = .forwards
-        exit.isRemovedOnCompletion = false
-        ghost.opacity = 0
-        ghost.add(exit, forKey: "cross-out")
+        let stride = max(snapshot.size.height, newFrame.height) + 6
+        let pushOut = CABasicAnimation(keyPath: "transform.translation.y")
+        pushOut.fromValue = 0
+        pushOut.toValue = stride
+        pushOut.duration = Self.rollDuration
+        pushOut.timingFunction = Self.rollTiming
+        pushOut.fillMode = .forwards
+        pushOut.isRemovedOnCompletion = false
+        ghost.add(pushOut, forKey: "push-out")
 
-        let enterRise = CABasicAnimation(keyPath: "transform.translation.y")
-        enterRise.fromValue = -Self.rollDistance
-        enterRise.toValue = 0
-        let enterFade = CABasicAnimation(keyPath: "opacity")
-        enterFade.fromValue = 0
-        enterFade.toValue = 1
-        let enter = CAAnimationGroup()
-        enter.animations = [enterRise, enterFade]
-        enter.duration = Self.rollDuration
-        enter.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        stackLayer.add(enter, forKey: "cross-in")
+        let pushIn = CABasicAnimation(keyPath: "transform.translation.y")
+        pushIn.fromValue = -stride
+        pushIn.toValue = 0
+        pushIn.duration = Self.rollDuration
+        pushIn.timingFunction = Self.rollTiming
+        stackLayer.add(pushIn, forKey: "push-in")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.rollDuration) { [weak self, weak ghost] in
             ghost?.removeFromSuperlayer()
