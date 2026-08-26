@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var windowWidth: CGFloat = 1320
     @State private var urlBarFrame: CGRect = .zero
     @State private var pendingRenameID: UUID?
+    @AppStorage("sidebarWatchedCollapsed") private var watchedCollapsed = false
     @FocusState private var isURLFieldFocused: Bool
 
     var body: some View {
@@ -172,19 +173,26 @@ struct ContentView: View {
 
                             if !archivedItems.isEmpty {
                                 Section {
-                                    ForEach(archivedItems) { item in
-                                        sidebarRow(
-                                            item,
-                                            includesListTopGutter: queueItems.isEmpty
-                                                && item.id == archivedItems.first?.id
-                                        )
+                                    if !watchedCollapsed {
+                                        ForEach(archivedItems) { item in
+                                            sidebarRow(
+                                                item,
+                                                includesListTopGutter: queueItems.isEmpty
+                                                    && item.id == archivedItems.first?.id
+                                            )
+                                        }
                                     }
                                 } header: {
                                     SidebarSectionHeader(
                                         title: "已看",
                                         count: archivedItems.count,
-                                        systemImage: "checkmark.circle"
-                                    )
+                                        systemImage: "checkmark.circle",
+                                        isCollapsed: watchedCollapsed
+                                    ) {
+                                        withAnimation(.easeOut(duration: 0.15)) {
+                                            watchedCollapsed.toggle()
+                                        }
+                                    }
                                     .padding(.top, queueItems.isEmpty ? 0 : 10)
                                 }
                             }
@@ -783,21 +791,37 @@ private struct SidebarSectionHeader: View {
     let title: String
     let count: Int
     let systemImage: String
+    var isCollapsed = false
+    var onToggle: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-            Text(title)
-            Text("\(count)")
-                .monospacedDigit()
-                .foregroundStyle(OpenMyChrome.faint)
-            Spacer()
+        Button {
+            onToggle?()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                Text(title)
+                Text("\(count)")
+                    .monospacedDigit()
+                    .foregroundStyle(OpenMyChrome.faint)
+                Spacer()
+                if onToggle != nil {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(OpenMyChrome.faint)
+                        .rotationEffect(.degrees(isCollapsed ? -90 : 0))
+                }
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(OpenMyChrome.muted)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(OpenMyChrome.canvas)
+            .contentShape(Rectangle())
         }
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(OpenMyChrome.muted)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(OpenMyChrome.canvas)
+        .buttonStyle(.plain)
+        .disabled(onToggle == nil)
+        .help(onToggle == nil ? "" : (isCollapsed ? "展开已看" : "收起已看"))
     }
 }
 
