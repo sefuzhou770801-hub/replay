@@ -62,6 +62,14 @@ enum SubtitleBlocksCheck {
         precondition(sparse.count == 1)
         precondition(sparse[0].text == "只有一句。")
 
+
+        // 7. 满 4 片后遇分句标点提前落刀，硬上限不再拦腰切短语。
+        let clause = SubtitleSentenceBlocks.aggregate(
+            (0..<5).map { cue(Double($0), Double($0) + 1, "part \($0)\n片段\($0)，") }
+        )
+        precondition(clause.count == 2, "分句落刀失效，实际 \(clause.count)")
+        precondition(clause[0].text.components(separatedBy: "\n")[1].hasSuffix("，"))
+
         print("subtitle_blocks_check=passed")
     }
 }

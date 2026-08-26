@@ -4,6 +4,7 @@ import Foundation
 /// 只作用于显示层，字幕文件与播放浮层不受影响；时间码取句首，跨度与片数设上限防失控。
 enum SubtitleSentenceBlocks {
     static let maxFragments = 6
+    static let preferredFragments = 4
     static let maxSpan: Double = 12
 
     static func aggregate(_ cues: [VideoSubtitleCue]) -> [VideoSubtitleCue] {
@@ -45,9 +46,12 @@ enum SubtitleSentenceBlocks {
             if !translation.isEmpty { translationParts.append(translation) }
             fragmentCount += 1
 
-            let sentenceClosed = endsSentence(translation.isEmpty ? source : translation)
+            let probe = translation.isEmpty ? source : translation
+            let sentenceClosed = endsSentence(probe)
+            // 块偏长后优先在分句标点落刀，避免硬上限把短语拦腰切断。
+            let clauseClosed = fragmentCount >= preferredFragments && endsClause(probe)
             let overCap = fragmentCount >= maxFragments || cue.endTime - blockStart >= maxSpan
-            if sentenceClosed || overCap {
+            if sentenceClosed || clauseClosed || overCap {
                 flush()
             }
         }
@@ -58,5 +62,10 @@ enum SubtitleSentenceBlocks {
     static func endsSentence(_ text: String) -> Bool {
         guard let last = text.trimmingCharacters(in: .whitespaces).last else { return false }
         return "。！？!?.…”』」".contains(last)
+    }
+
+    static func endsClause(_ text: String) -> Bool {
+        guard let last = text.trimmingCharacters(in: .whitespaces).last else { return false }
+        return "，、；：,;:".contains(last)
     }
 }
