@@ -512,8 +512,18 @@ struct KeyboardRoutingCheck {
         )
         precondition(
             route(character: "f", keyCode: 3, modifiers: .command, hasActivePlayer: true)
-                == .passThrough,
-            "Command-F 不得切换全屏"
+                == .focusLibrarySearch,
+            "Command-F 必须聚焦字幕搜索，不得切换全屏"
+        )
+        precondition(
+            route(
+                isEditingText: true,
+                character: "F",
+                keyCode: 3,
+                modifiers: .command,
+                hasActivePlayer: false
+            ) == .focusLibrarySearch,
+            "编辑态 Command-F 仍须聚焦字幕搜索"
         )
         precondition(
             route(keyCode: 49, modifiers: .option, hasActivePlayer: true) == .passThrough,

@@ -18,6 +18,14 @@ struct ContentView: View {
     @State private var pendingRenameID: UUID?
     @AppStorage("sidebarWatchedCollapsed") private var watchedCollapsed = false
     @FocusState private var isURLFieldFocused: Bool
+    @FocusState private var isSearchFieldFocused: Bool
+    @State private var librarySearchQuery = ""
+    @State private var subtitleTracks: [UUID: VideoSubtitleTrack] = [:]
+    @State private var subtitleIndexReady = false
+    @State private var subtitleIndexTask: Task<Void, Never>?
+    @State private var pendingSeek: PlayerSeekRequest?
+    @State private var pendingSeekItemID: UUID?
+    @State private var selectedSearchHitID: String?
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -74,9 +82,17 @@ struct ContentView: View {
             consumePendingClipboardValues()
         }
         .onReceive(NotificationCenter.default.publisher(for: .replayTextFocusShouldResign)) { _ in
+            if isSearchFieldFocused {
+                librarySearchQuery = ""
+            }
             isURLFieldFocused = false
+            isSearchFieldFocused = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .replayFocusLibrarySearch)) { _ in
+            focusLibrarySearch()
         }
         .onChange(of: isURLFieldFocused) { focused in
+            if focused { isSearchFieldFocused = false }
             let controller = PlaybackWindowFocusController.attached(to: NSApp.keyWindow)
             if focused, controller?.allowTextFocus == false {
                 isURLFieldFocused = false
@@ -84,7 +100,29 @@ struct ContentView: View {
             }
             controller?.setSwiftUITextFieldFocused(focused)
         }
-        .onDisappear { detailSelectionTask?.cancel() }
+        .onChange(of: isSearchFieldFocused) { focused in
+            if focused { isURLFieldFocused = false }
+            let controller = PlaybackWindowFocusController.attached(to: NSApp.keyWindow)
+            if focused, controller?.allowTextFocus == false {
+                isSearchFieldFocused = false
+                return
+            }
+            controller?.setSwiftUITextFieldFocused(focused)
+        }
+        .onChange(of: librarySearchQuery) { query in
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                selectedSearchHitID = nil
+            } else {
+                loadSubtitleIndexIfNeeded()
+            }
+        }
+        .onChange(of: store.items.count) { _ in
+            invalidateSubtitleIndex()
+        }
+        .onDisappear {
+            detailSelectionTask?.cancel()
+            subtitleIndexTask?.cancel()
+        }
         .onChange(of: store.selection) { selectedID in
             updateDetailAfterSelectionPaints(selectedID)
         }
@@ -130,7 +168,24 @@ struct ContentView: View {
             .padding(.leading, 82)
             .padding(.trailing, 54)
         } content: {
-            queueList
+            VStack(spacing: 0) {
+                LibrarySearchField(query: $librarySearchQuery, isFocused: $isSearchFieldFocused)
+                    .padding(.horizontal, SidebarQueueLayout.listHorizontalPadding)
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
+
+                if isLibrarySearching {
+                    LibrarySearchResults(
+                        query: trimmedLibrarySearchQuery,
+                        isIndexReady: subtitleIndexReady,
+                        groups: librarySearchGroups,
+                        selectedHitID: selectedSearchHitID,
+                        onSelect: openSearchHit
+                    )
+                } else {
+                    queueList
+                }
+            }
         }
     }
 
@@ -328,10 +383,15 @@ struct ContentView: View {
                 item: item,
                 sidebarCollapsed: columnVisibility == .detailOnly,
                 windowWidth: windowWidth,
+                incomingSeek: pendingSeekItemID == item.id ? pendingSeek : nil,
                 collapseSidebar: {
                     withAnimation(.easeInOut(duration: 0.22)) {
                         columnVisibility = .detailOnly
                     }
+                },
+                consumeIncomingSeek: {
+                    pendingSeek = nil
+                    pendingSeekItemID = nil
                 }
             )
                 .id(item.id)
@@ -396,6 +456,70 @@ struct ContentView: View {
         guard isURLFieldFocused else { return }
         isURLFieldFocused = false
         PlaybackWindowFocusController.resign(in: NSApp.keyWindow)
+    }
+
+    private var trimmedLibrarySearchQuery: String {
+        librarySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isLibrarySearching: Bool {
+        !trimmedLibrarySearchQuery.isEmpty
+    }
+
+    private var librarySearchGroups: [LibrarySubtitleSearch.Group] {
+        let catalog = (store.queueItems + store.archivedItems).map {
+            LibrarySubtitleSearch.CatalogItem(id: $0.id, title: $0.title, author: $0.author)
+        }
+        return LibrarySubtitleSearch.search(
+            query: trimmedLibrarySearchQuery,
+            items: catalog,
+            tracks: subtitleTracks
+        )
+    }
+
+    private func focusLibrarySearch() {
+        isURLFieldFocused = false
+        let controller = PlaybackWindowFocusController.attached(to: NSApp.keyWindow)
+        controller?.setSwiftUITextFieldFocused(true)
+        DispatchQueue.main.async {
+            controller?.setSwiftUITextFieldFocused(true)
+            isSearchFieldFocused = true
+        }
+    }
+
+    private func loadSubtitleIndexIfNeeded() {
+        guard !subtitleIndexReady, subtitleIndexTask == nil else { return }
+        let folder = store.mediaFolder
+        subtitleIndexTask = Task {
+            let tracks = await Task.detached(priority: .userInitiated) {
+                LibrarySubtitleSearch.loadTracks(in: folder)
+            }.value
+            guard !Task.isCancelled else { return }
+            subtitleTracks = tracks
+            subtitleIndexReady = true
+            subtitleIndexTask = nil
+        }
+    }
+
+    private func invalidateSubtitleIndex() {
+        subtitleIndexTask?.cancel()
+        subtitleIndexTask = nil
+        subtitleIndexReady = false
+        subtitleTracks = [:]
+        if isLibrarySearching {
+            loadSubtitleIndexIfNeeded()
+        }
+    }
+
+    private func openSearchHit(_ hit: LibrarySubtitleSearch.Hit) {
+        selectedSearchHitID = hit.id
+        let request = PlayerSeekRequest(time: hit.startTime, shouldPlay: true)
+        pendingSeekItemID = hit.itemID
+        pendingSeek = request
+        store.updatePlaybackPosition(hit.startTime, for: hit.itemID)
+        store.selection = hit.itemID
+        detailSelection = hit.itemID
+        store.rescanLocalSubtitle(for: hit.itemID)
     }
 }
 
@@ -903,7 +1027,9 @@ private struct VideoDetail: View {
     let item: WatchItem
     let sidebarCollapsed: Bool
     let windowWidth: CGFloat
+    var incomingSeek: PlayerSeekRequest?
     let collapseSidebar: () -> Void
+    var consumeIncomingSeek: () -> Void = {}
 
     var body: some View {
         Group {
@@ -919,9 +1045,13 @@ private struct VideoDetail: View {
                 loadSubtitles(path: path)
             }
             collapseSidebarForNarrowChapterLayoutIfNeeded()
+            applyIncomingSeek()
         }
         .onChange(of: item.id) { newID in
             subtitleMode = SubtitleModeStore.mode(for: newID)
+        }
+        .onChange(of: incomingSeek?.id) { _ in
+            applyIncomingSeek()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.rescanLocalSubtitle(for: item.id) { path in
@@ -1331,6 +1461,16 @@ private struct VideoDetail: View {
         seekRequest = PlayerSeekRequest(time: time, shouldPlay: playback.isPlaying)
         store.updatePlaybackPosition(time, for: item.id)
         applyPlaybackTimeOptimistically(time)
+    }
+
+    private func applyIncomingSeek() {
+        guard let incomingSeek else { return }
+        seekRequest = incomingSeek
+        store.updatePlaybackPosition(incomingSeek.time, for: item.id)
+        applyPlaybackTimeOptimistically(incomingSeek.time)
+        DispatchQueue.main.async {
+            consumeIncomingSeek()
+        }
     }
 
     private func applyPlaybackTimeOptimistically(_ time: Double) {

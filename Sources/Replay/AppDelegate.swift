@@ -95,6 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self?.inbox.receiveClipboard(value)
                 return nil
+            case .focusLibrarySearch:
+                NotificationCenter.default.post(name: .replayFocusLibrarySearch, object: nil)
+                return nil
             }
         }
     }

@@ -102,3 +102,10 @@ compile_and_run subtitle_blocks \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
     "$project_dir/tools/subtitle_blocks_check.swift"
+
+compile_and_run library_subtitle_search \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
+    "$project_dir/Sources/Replay/SubtitleTrackRank.swift" \
+    "$project_dir/Sources/Replay/LibrarySubtitleSearch.swift" \
+    "$project_dir/tools/library_subtitle_search_check.swift"
