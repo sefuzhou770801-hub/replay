@@ -91,22 +91,24 @@ enum WatchQARequestBuilder {
         return lines.joined(separator: "\n")
     }
 
-    static func jsonObject(from input: WatchQARequestInput) -> [String: Any] {
-        var content: [[String: Any]] = []
-        if let jpegBase64 = input.jpegBase64, !jpegBase64.isEmpty {
-            content.append([
+    static func jsonObject(from input: WatchQARequestInput) -> [String: Any]? {
+        guard let jpegBase64 = input.jpegBase64, !jpegBase64.isEmpty else {
+            return nil
+        }
+        let content: [[String: Any]] = [
+            [
                 "type": "image",
                 "source": [
                     "type": "base64",
                     "media_type": "image/jpeg",
                     "data": jpegBase64
                 ]
-            ])
-        }
-        content.append([
-            "type": "text",
-            "text": userText(from: input)
-        ])
+            ],
+            [
+                "type": "text",
+                "text": userText(from: input)
+            ]
+        ]
         return [
             "model": model,
             "max_tokens": maxTokens,
@@ -121,9 +123,9 @@ enum WatchQARequestBuilder {
         ]
     }
 
-    static func jsonData(from input: WatchQARequestInput) -> Data {
-        let object = jsonObject(from: input)
-        return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+    static func jsonData(from input: WatchQARequestInput) -> Data? {
+        guard let object = jsonObject(from: input) else { return nil }
+        return try? JSONSerialization.data(withJSONObject: object)
     }
 
     static func formatTimecode(_ seconds: Double) -> String {

@@ -70,7 +70,7 @@ struct QAContextCheck {
             jpegBase64: "framemock",
             question: "画面里是什么"
         )
-        let fullRoot = decode(WatchQARequestBuilder.jsonData(from: full))
+        let fullRoot = requestJSON(from: full)
         precondition(fullRoot["model"] as? String == "claude-sonnet-5")
         precondition((fullRoot["max_tokens"] as? NSNumber)?.intValue == 1024)
         precondition((fullRoot["stream"] as? NSNumber)?.boolValue == true)
@@ -101,18 +101,30 @@ struct QAContextCheck {
             chapterTitle: "开场",
             currentTime: 15,
             cues: [],
-            jpegBase64: nil,
+            jpegBase64: "framemock",
             question: "画面里是什么"
         )
-        let noSubText = userText(from: decode(WatchQARequestBuilder.jsonData(from: noSubtitles)))
+        let noSubRoot = requestJSON(from: noSubtitles)
+        let noSubText = userText(from: noSubRoot)
         precondition(noSubText.contains("标题：Me at the zoo"))
         precondition(noSubText.contains("章节：开场"))
         precondition(!noSubText.contains("字幕"), "无字幕时上下文只少字幕段")
         precondition(noSubText.contains("问题：画面里是什么"))
-        precondition(
-            contentBlocks(from: decode(WatchQARequestBuilder.jsonData(from: noSubtitles)))
-                .allSatisfy { ($0["type"] as? String) != "image" }
+        let noSubImage = imageBlock(from: noSubRoot)
+        precondition(noSubImage["type"] as? String == "image", "无字幕仍须带当前画面")
+        precondition((noSubImage["source"] as? [String: Any])?["data"] as? String == "framemock")
+
+        let noFrame = WatchQARequestInput(
+            title: "Me at the zoo",
+            author: "jawed",
+            chapterTitle: "开场",
+            currentTime: 15,
+            cues: cues,
+            jpegBase64: nil,
+            question: "画面里是什么"
         )
+        precondition(WatchQARequestBuilder.jsonObject(from: noFrame) == nil, "无画面不得组装请求")
+        precondition(WatchQARequestBuilder.jsonData(from: noFrame) == nil, "无画面不得生成请求体")
 
         let noChapter = WatchQARequestInput(
             title: "Me at the zoo",
@@ -120,10 +132,10 @@ struct QAContextCheck {
             chapterTitle: nil,
             currentTime: 15,
             cues: cues,
-            jpegBase64: nil,
+            jpegBase64: "framemock",
             question: "他刚才说了什么"
         )
-        let noChapterText = userText(from: decode(WatchQARequestBuilder.jsonData(from: noChapter)))
+        let noChapterText = userText(from: requestJSON(from: noChapter))
         precondition(!noChapterText.contains("章节："), "无章节时不得输出空章节行")
         precondition(noChapterText.contains("字幕（当前前后 90 秒）："))
         precondition(noChapterText.contains("问题：他刚才说了什么"))
@@ -153,6 +165,13 @@ struct QAContextCheck {
             ) == "sk-from-env"
         )
         defaults.removePersistentDomain(forName: suite)
+    }
+
+    private static func requestJSON(from input: WatchQARequestInput) -> [String: Any] {
+        guard let data = WatchQARequestBuilder.jsonData(from: input) else {
+            preconditionFailure("合法输入应能组装请求")
+        }
+        return decode(data)
     }
 
     private static func decode(_ data: Data) -> [String: Any] {

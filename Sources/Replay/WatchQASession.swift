@@ -8,6 +8,8 @@ struct WatchQAClientError: LocalizedError {
 }
 
 enum WatchQAFrameCapture {
+    static let missingHint = "没拿到当前画面，按回车重试"
+
     static func jpegBase64(
         asset: AVAsset,
         time: CMTime,
@@ -44,7 +46,10 @@ enum WatchQAClient {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(WatchQARequestBuilder.anthropicVersion, forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = WatchQARequestBuilder.jsonData(from: input)
+        guard let httpBody = WatchQARequestBuilder.jsonData(from: input) else {
+            throw WatchQAClientError(message: WatchQAFrameCapture.missingHint)
+        }
+        request.httpBody = httpBody
 
         let (bytes, response) = try await session.bytes(for: request)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -155,6 +160,11 @@ final class WatchQASession: ObservableObject {
                 return WatchQAFrameCapture.jpegBase64(asset: frameSource.asset, time: frameSource.time)
             }.value
             guard !Task.isCancelled else { return }
+            guard let jpeg, !jpeg.isEmpty else {
+                self?.statusMessage = WatchQAFrameCapture.missingHint
+                self?.isStreaming = false
+                return
+            }
             let input = WatchQARequestInput(
                 title: title,
                 author: author,
