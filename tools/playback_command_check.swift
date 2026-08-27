@@ -271,6 +271,8 @@ struct PlaybackCommandCheck {
         var selectedRates: [Double] = []
         var fullscreenToggleCount = 0
         var fullscreenExitCount = 0
+        var askQuestionCount = 0
+        var dismissAskCount = 0
         let routePlayer = AVPlayer()
         let token = PlaybackCommandCenter.shared.register(
             player: routePlayer,
@@ -287,8 +289,16 @@ struct PlaybackCommandCheck {
             exitFullscreen: {
                 fullscreenExitCount += 1
                 return true
+            },
+            askQuestion: {
+                askQuestionCount += 1
+                return true
             }
         )
+        PlaybackCommandCenter.shared.setAskOverlayDismissHandler {
+            dismissAskCount += 1
+            return true
+        }
         precondition(PlaybackCommandCenter.shared.hasActivePlayer)
         precondition(PlaybackCommandCenter.shared.isActive(token))
         precondition(PlaybackCommandCenter.shared.activeRoutePlayer === routePlayer)
@@ -304,6 +314,8 @@ struct PlaybackCommandCheck {
         precondition(PlaybackCommandCenter.shared.setPlaybackRate(to: 99))
         precondition(PlaybackCommandCenter.shared.toggleFullscreen())
         precondition(PlaybackCommandCenter.shared.exitFullscreen())
+        precondition(PlaybackCommandCenter.shared.askQuestion())
+        precondition(PlaybackCommandCenter.shared.dismissAskOverlay())
         precondition(received == [-10, 10])
         precondition(toggleCount == 1)
         precondition(requestedPlayingStates == [true, false])
@@ -312,7 +324,10 @@ struct PlaybackCommandCheck {
         precondition(selectedRates == [1.7, 2.5])
         precondition(fullscreenToggleCount == 1)
         precondition(fullscreenExitCount == 1)
+        precondition(askQuestionCount == 1)
+        precondition(dismissAskCount == 1)
         PlaybackCommandCenter.shared.unregister(token)
+        PlaybackCommandCenter.shared.setAskOverlayDismissHandler(nil)
         precondition(!PlaybackCommandCenter.shared.hasActivePlayer)
         precondition(!PlaybackCommandCenter.shared.isActive(token))
         precondition(PlaybackCommandCenter.shared.activeRoutePlayer == nil)
@@ -325,6 +340,8 @@ struct PlaybackCommandCheck {
         precondition(!PlaybackCommandCenter.shared.setPlaybackRate(to: 1.5))
         precondition(!PlaybackCommandCenter.shared.toggleFullscreen())
         precondition(!PlaybackCommandCenter.shared.exitFullscreen())
+        precondition(!PlaybackCommandCenter.shared.askQuestion())
+        precondition(!PlaybackCommandCenter.shared.dismissAskOverlay())
         print("playback_command_check=passed")
     }
 }

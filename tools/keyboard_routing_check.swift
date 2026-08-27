@@ -227,6 +227,18 @@ struct KeyboardRoutingCheck {
             "大写 F 必须与小写同样切换全屏"
         )
         precondition(
+            route(character: "a", keyCode: 0, hasActivePlayer: true) == .askQuestion,
+            "空闲时 a 必须打开看时问答"
+        )
+        precondition(
+            route(character: "A", keyCode: 0, hasActivePlayer: true) == .askQuestion,
+            "大写 A 必须与小写同样打开看时问答"
+        )
+        precondition(
+            route(character: "a", keyCode: 0, hasActivePlayer: false) == .passThrough,
+            "没有播放器时 a 不得打开问答"
+        )
+        precondition(
             route(keyCode: 53, hasActivePlayer: true) == .exitFullscreen,
             "空闲时 Esc 必须退出全屏"
         )

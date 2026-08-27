@@ -927,6 +927,8 @@ final class PlaybackCommandCenter {
     private var rateSelectionHandler: ((Double) -> Void)?
     private var fullscreenHandler: (() -> Bool)?
     private var fullscreenExitHandler: (() -> Bool)?
+    private var askQuestionHandler: (() -> Bool)?
+    private var dismissAskHandler: (() -> Bool)?
 
     var hasActivePlayer: Bool { activeToken != nil }
     var activeRoutePlayer: AVPlayer? { routePlayer }
@@ -947,7 +949,8 @@ final class PlaybackCommandCenter {
         adjustRate: @escaping (Double) -> Void,
         setRate: @escaping (Double) -> Void,
         toggleFullscreen: @escaping () -> Bool,
-        exitFullscreen: @escaping () -> Bool
+        exitFullscreen: @escaping () -> Bool,
+        askQuestion: @escaping () -> Bool
     ) -> UUID {
         let token = UUID()
         activeToken = token
@@ -960,6 +963,7 @@ final class PlaybackCommandCenter {
         rateSelectionHandler = setRate
         fullscreenHandler = toggleFullscreen
         fullscreenExitHandler = exitFullscreen
+        askQuestionHandler = askQuestion
         return token
     }
 
@@ -975,6 +979,11 @@ final class PlaybackCommandCenter {
         rateSelectionHandler = nil
         fullscreenHandler = nil
         fullscreenExitHandler = nil
+        askQuestionHandler = nil
+    }
+
+    func setAskOverlayDismissHandler(_ handler: (() -> Bool)?) {
+        dismissAskHandler = handler
     }
 
     @discardableResult
@@ -1035,6 +1044,16 @@ final class PlaybackCommandCenter {
     func exitFullscreen() -> Bool {
         fullscreenExitHandler?() ?? false
     }
+
+    @discardableResult
+    func askQuestion() -> Bool {
+        askQuestionHandler?() ?? false
+    }
+
+    @discardableResult
+    func dismissAskOverlay() -> Bool {
+        dismissAskHandler?() ?? false
+    }
 }
 
 struct AirPlayRoutePicker: NSViewRepresentable {
@@ -1068,13 +1087,15 @@ struct LocalVideoPlayer: NSViewRepresentable {
     let onStateChange: (PlaybackSnapshot) -> Void
     let onVolumeChange: (Double) -> Void
     let onEnded: () -> Void
+    let onAskQuestion: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onProgress: onProgress,
             onStateChange: onStateChange,
             onVolumeChange: onVolumeChange,
-            onEnded: onEnded
+            onEnded: onEnded,
+            onAskQuestion: onAskQuestion
         )
     }
 
@@ -1106,6 +1127,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
     }
 
     func updateNSView(_ view: PictureInPicturePlayerView, context: Context) {
+        context.coordinator.onAskQuestion = onAskQuestion
         if context.coordinator.currentURL != url {
             context.coordinator.load(url: url, title: title, author: author, resumeAt: resumeAt, into: view)
             context.coordinator.updateSubtitles(track: subtitleTrack, mode: subtitleMode)
@@ -1146,6 +1168,9 @@ struct LocalVideoPlayer: NSViewRepresentable {
         private let onStateChange: (PlaybackSnapshot) -> Void
         private let onVolumeChange: (Double) -> Void
         private let onEnded: () -> Void
+        fileprivate var onAskQuestion: () -> Void
+        private var pendingAskAfterFullscreen = false
+        private var askAfterFullscreenObserver: NSObjectProtocol?
         private var lastSeekRequestID: UUID?
         private var seekSession = SubtitleSeekSession()
         private var commandToken: UUID?
@@ -1160,12 +1185,14 @@ struct LocalVideoPlayer: NSViewRepresentable {
             onProgress: @escaping (Double) -> Void,
             onStateChange: @escaping (PlaybackSnapshot) -> Void,
             onVolumeChange: @escaping (Double) -> Void,
-            onEnded: @escaping () -> Void
+            onEnded: @escaping () -> Void,
+            onAskQuestion: @escaping () -> Void
         ) {
             self.onProgress = onProgress
             self.onStateChange = onStateChange
             self.onVolumeChange = onVolumeChange
             self.onEnded = onEnded
+            self.onAskQuestion = onAskQuestion
             super.init()
         }
 
@@ -1207,7 +1234,8 @@ struct LocalVideoPlayer: NSViewRepresentable {
                 adjustRate: { [weak self] amount in self?.adjustPlaybackRate(by: amount) },
                 setRate: { [weak self] rate in self?.setPlaybackRate(rate) },
                 toggleFullscreen: { [weak self] in self?.toggleFullscreen() ?? false },
-                exitFullscreen: { [weak self] in self?.exitFullscreen() ?? false }
+                exitFullscreen: { [weak self] in self?.exitFullscreen() ?? false },
+                askQuestion: { [weak self] in self?.handleAskQuestion() ?? false }
             )
             SystemMediaController.shared.activate(player: player)
             SystemMediaController.shared.setItem(title: title, author: author)
@@ -1508,7 +1536,66 @@ struct LocalVideoPlayer: NSViewRepresentable {
             }
             if restoreInline {
                 publishCurrentSubtitle(animated: false)
+                consumePendingAsk()
+            } else {
+                cancelPendingAsk()
             }
+        }
+
+        private func handleAskQuestion() -> Bool {
+            if backgroundPanel != nil { return false }
+            setPlayback(false)
+            let window = fullscreenWindow ?? playerView?.window
+            let inNativeFullscreen = window?.styleMask.contains(.fullScreen) ?? false
+            if isVideoFullscreen || inNativeFullscreen {
+                pendingAskAfterFullscreen = true
+                if !isVideoFullscreen, let window {
+                    observeAskAfterNativeFullscreen(window)
+                }
+                if exitFullscreen() {
+                    return true
+                }
+                cancelPendingAsk()
+                if isVideoFullscreen {
+                    return true
+                }
+            }
+            presentAskOverlay()
+            return true
+        }
+
+        private func observeAskAfterNativeFullscreen(_ window: NSWindow) {
+            removeAskAfterFullscreenObserver()
+            askAfterFullscreenObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didExitFullScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.consumePendingAsk()
+            }
+        }
+
+        private func consumePendingAsk() {
+            removeAskAfterFullscreenObserver()
+            guard pendingAskAfterFullscreen else { return }
+            pendingAskAfterFullscreen = false
+            presentAskOverlay()
+        }
+
+        private func cancelPendingAsk() {
+            pendingAskAfterFullscreen = false
+            removeAskAfterFullscreenObserver()
+        }
+
+        private func presentAskOverlay() {
+            onAskQuestion()
+        }
+
+        private func removeAskAfterFullscreenObserver() {
+            if let askAfterFullscreenObserver {
+                NotificationCenter.default.removeObserver(askAfterFullscreenObserver)
+            }
+            askAfterFullscreenObserver = nil
         }
 
         private func removeFullscreenObservers() {
@@ -1810,6 +1897,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
         }
 
         func stop() {
+            cancelPendingAsk()
             _ = exitFullscreen()
             hideBackgroundPlayer(animated: false, restoreInline: false)
             finishFullscreenPresentation(restoreInline: false)

@@ -10,6 +10,7 @@ enum PlaybackKeyboardAction: Equatable {
     case adjustRate(Double)
     case pasteURL
     case resignTextFocus
+    case askQuestion
 }
 
 enum PlaybackKeyboardRouting {
@@ -70,6 +71,9 @@ enum PlaybackKeyboardRouting {
 
         if keyCode == 49 {
             return .togglePlayback
+        }
+        if character?.lowercased() == "a" {
+            return .askQuestion
         }
         if character?.lowercased() == "f" {
             return .toggleFullscreen
