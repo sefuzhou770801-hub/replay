@@ -2,6 +2,7 @@ import AppKit
 
 extension Notification.Name {
     static let replayTextFocusShouldResign = Notification.Name("ReplayTextFocusShouldResign")
+    static let replayFocusLibrarySearch = Notification.Name("ReplayFocusLibrarySearch")
 }
 
 enum TextFocusResignReason: String {

@@ -53,6 +53,12 @@ struct ReplayApp: App {
             CommandGroup(after: .appInfo) {
                 Button("打开下载文件夹") { store.revealMediaFolder() }
             }
+            CommandGroup(after: .pasteboard) {
+                Button("搜索字幕") {
+                    NotificationCenter.default.post(name: .replayFocusLibrarySearch, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
         }
     }
 }

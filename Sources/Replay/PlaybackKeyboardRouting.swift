@@ -9,6 +9,7 @@ enum PlaybackKeyboardAction: Equatable {
     case skip(Double)
     case adjustRate(Double)
     case pasteURL
+    case focusLibrarySearch
     case resignTextFocus
 }
 
@@ -45,6 +46,10 @@ enum PlaybackKeyboardRouting {
         hasActivePlayer: Bool
     ) -> PlaybackKeyboardAction {
         let mods = modifiers.intersection(shortcutModifiers)
+
+        if mods == .command, character?.lowercased() == "f" {
+            return .focusLibrarySearch
+        }
 
         if isEditingText {
             if keyCode == 53, mods.isEmpty {
