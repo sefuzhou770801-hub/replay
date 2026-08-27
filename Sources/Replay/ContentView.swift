@@ -293,6 +293,10 @@ struct ContentView: View {
             Button(QueueRowMeta.visibleTitle(for: .revealInFinder, isWatched: item.isWatched)) {
                 store.revealLocalFile(item.id)
             }
+        case .generateBrief:
+            Button(QueueRowMeta.visibleTitle(for: .generateBrief, isWatched: item.isWatched)) {
+                store.requestBrief(for: item.id)
+            }
         case .divider:
             Divider()
         case .delete:
@@ -887,6 +891,90 @@ private struct PlayerStageLayout: Layout {
     }
 }
 
+private struct WatchBriefBanner: View {
+    let brief: WatchBrief?
+    let status: WatchBriefStatus
+    let onSeek: (Double) -> Void
+
+    var body: some View {
+        Group {
+            if let brief {
+                briefContent(brief)
+            } else if status == .generating {
+                generatingRow
+            } else if case .failed(let message) = status {
+                failedRow(message)
+            }
+        }
+    }
+
+    private func briefContent(_ brief: WatchBrief) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(brief.summary)
+                .font(.system(size: 12))
+                .foregroundStyle(OpenMyChrome.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(brief.density)
+                .font(.system(size: 12))
+                .foregroundStyle(OpenMyChrome.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if !brief.highlights.isEmpty {
+                highlightRow(brief.highlights)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func highlightRow(_ highlights: [WatchBriefHighlight]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            ForEach(Array(highlights.enumerated()), id: \.offset) { _, highlight in
+                Button {
+                    onSeek(highlight.time)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(WatchBriefTimeFormat.string(from: highlight.time))
+                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(OpenMyChrome.success)
+                        Text(highlight.label)
+                            .font(.system(size: 11))
+                            .foregroundStyle(OpenMyChrome.ink)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("跳到 \(WatchBriefTimeFormat.string(from: highlight.time))")
+            }
+        }
+    }
+
+    private var generatingRow: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("正在生成预审…")
+                .font(.system(size: 12))
+                .foregroundStyle(OpenMyChrome.muted)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func failedRow(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 12))
+            .foregroundStyle(OpenMyChrome.muted)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
 private struct VideoDetail: View {
     @EnvironmentObject private var store: QueueStore
     @State private var subtitleMode: SubtitleDisplayMode = .off
@@ -914,6 +1002,7 @@ private struct VideoDetail: View {
             userHasManuallySwitchedSidePane = false
             subtitleMode = SubtitleModeStore.mode(for: item.id)
             applyOpeningSidePaneMode()
+            store.loadBrief(for: item.id)
             // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
             store.rescanLocalSubtitle(for: item.id) { path in
                 loadSubtitles(path: path)
@@ -922,6 +1011,7 @@ private struct VideoDetail: View {
         }
         .onChange(of: item.id) { newID in
             subtitleMode = SubtitleModeStore.mode(for: newID)
+            store.loadBrief(for: newID)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.rescanLocalSubtitle(for: item.id) { path in
@@ -976,6 +1066,11 @@ private struct VideoDetail: View {
         VStack(spacing: 0) {
             centerPaneHeader
             Divider()
+            WatchBriefBanner(
+                brief: store.briefs[item.id],
+                status: store.briefStatuses[item.id] ?? .idle,
+                onSeek: seekToTime
+            )
             mainContent
         }
         .ignoresSafeArea(.container, edges: .top)
