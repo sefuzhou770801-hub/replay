@@ -7,7 +7,56 @@ struct QAContextCheck {
         checkChapterLookup()
         checkRequestJSON()
         checkMissingKeyHint()
+        checkSSEParsing()
         print("qa_context_check=passed")
+    }
+
+    private static func checkSSEParsing() {
+        let deltaLine = #"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"大象"}}"#
+        precondition(WatchQASSEParser.textDelta(fromLine: deltaLine) == "大象", "文本增量须解析出正文")
+        precondition(!WatchQASSEParser.isCompletion(line: deltaLine), "文本增量不是完成事件")
+
+        let stopLine = #"data: {"type":"message_stop"}"#
+        precondition(WatchQASSEParser.isCompletion(line: stopLine), "message_stop 须识别为完成事件")
+        precondition(WatchQASSEParser.textDelta(fromLine: stopLine) == nil, "完成事件没有文本增量")
+
+        // 完成前的其他事件不得误判为完成，否则会提前落盘半截回答。
+        let startLine = #"data: {"type":"message_start","message":{"id":"msg_1"}}"#
+        precondition(!WatchQASSEParser.isCompletion(line: startLine))
+        let pingLine = "event: ping"
+        precondition(!WatchQASSEParser.isCompletion(line: pingLine))
+        precondition(!WatchQASSEParser.isCompletion(line: "data: [DONE]"))
+        precondition(!WatchQASSEParser.isCompletion(line: "data: {not json"))
+        precondition(!WatchQASSEParser.isCompletion(line: ""))
+
+        // step 是 stream 与 reduce 共用的逐行判定，直接钉死三种分支。
+        precondition(WatchQASSEParser.step(line: deltaLine) == .delta("大象"))
+        precondition(WatchQASSEParser.step(line: stopLine) == .completed)
+        precondition(WatchQASSEParser.step(line: startLine) == .ignore)
+        precondition(WatchQASSEParser.step(line: pingLine) == .ignore)
+
+        // 归约口径：收到 message_stop 前累积的文本即完整回答，标记完成。
+        let full = WatchQASSEParser.reduce(lines: [
+            #"data: {"type":"message_start"}"#,
+            delta("大"),
+            delta("象"),
+            #"data: {"type":"message_stop"}"#,
+            delta("多余")  // 完成事件之后到达的增量必须忽略
+        ])
+        precondition(full.text == "大象", "完成前累积的文本即完整回答，完成后的增量忽略")
+        precondition(full.completed, "收到 message_stop 须标记完成")
+
+        // 未收到完成事件（浮层提前关闭 / 流被截断）：有文本但不算完成，据此不落盘。
+        let truncated = WatchQASSEParser.reduce(lines: [delta("半"), delta("截")])
+        precondition(truncated.text == "半截")
+        precondition(!truncated.completed, "无 message_stop 不得标记完成")
+    }
+
+    private static func delta(_ text: String) -> String {
+        let escaped = text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"\(escaped)\"}}"
     }
 
     private static func checkSubtitleWindow() {

@@ -902,6 +902,8 @@ private struct VideoDetail: View {
     @State private var volumeHUDDismissalTask: Task<Void, Never>?
     @StateObject private var watchQA = WatchQASession()
     @FocusState private var isQuestionFieldFocused: Bool
+    @State private var qaEntries: [WatchQAEntry] = []
+    @State private var qaLoadTask: Task<Void, Never>?
     let item: WatchItem
     let sidebarCollapsed: Bool
     let windowWidth: CGFloat
@@ -920,6 +922,7 @@ private struct VideoDetail: View {
             store.rescanLocalSubtitle(for: item.id) { path in
                 loadSubtitles(path: path)
             }
+            loadQA(for: item.id)
             collapseSidebarForNarrowChapterLayoutIfNeeded()
             PlaybackCommandCenter.shared.setAskOverlayDismissHandler { [watchQA] in
                 watchQA.dismiss()
@@ -927,6 +930,8 @@ private struct VideoDetail: View {
         }
         .onChange(of: item.id) { newID in
             subtitleMode = SubtitleModeStore.mode(for: newID)
+            watchQA.dismiss(resume: false)
+            loadQA(for: newID)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.rescanLocalSubtitle(for: item.id) { path in
@@ -935,6 +940,7 @@ private struct VideoDetail: View {
         }
         .onDisappear {
             subtitleLoadTask?.cancel()
+            qaLoadTask?.cancel()
             volumeHUDDismissalTask?.cancel()
             PlaybackCommandCenter.shared.setAskOverlayDismissHandler(nil)
             watchQA.dismiss(resume: false)
@@ -966,12 +972,16 @@ private struct VideoDetail: View {
     }
 
     private var usesCompactToolbarActions: Bool {
-        item.hasSidePaneContent
+        showsSidePane
+    }
+
+    private var showsSidePane: Bool {
+        item.hasSidePaneContent || !qaEntries.isEmpty
     }
 
     @ViewBuilder
     private var chapterLayout: some View {
-        if !item.hasSidePaneContent {
+        if !showsSidePane {
             centerPane
         } else if #available(macOS 14.0, *) {
             centerPane
@@ -1026,7 +1036,7 @@ private struct VideoDetail: View {
             }
             .fixedSize()
 
-            if item.hasSidePaneContent, !chaptersPresented {
+            if showsSidePane, !chaptersPresented {
                 TitlebarInteractiveHost {
                     Button(action: toggleChapters) {
                         Image(systemName: "sidebar.trailing")
@@ -1115,6 +1125,7 @@ private struct VideoDetail: View {
         ChapterSidebar(
             chapters: item.availableChapters,
             subtitleCues: subtitleTrack?.cues ?? [],
+            qaEntries: qaEntries,
             hasSubtitleSource: item.subtitleFileURL != nil || subtitleTrack != nil,
             currentTime: playback.currentTime,
             isPresented: chaptersPresented,
@@ -1168,11 +1179,20 @@ private struct VideoDetail: View {
                     session: watchQA,
                     isQuestionFieldFocused: $isQuestionFieldFocused,
                     onSubmit: {
+                        let itemID = item.id
                         watchQA.submit(
                             item: item,
                             snapshot: playback,
-                            subtitleTrack: subtitleTrack
-                        )
+                            subtitleTrack: subtitleTrack,
+                            sidecar: WatchQASidecar(itemID: itemID, folder: store.mediaFolder)
+                        ) { entry in
+                            // VideoDetail 以 .id(item.id) 隔离，每个视频有独立的 qaEntries 与会话，
+                            // 完成回调只落到自己视频的列表；切走后旧视频视图连同状态一并销毁，不会污染新视频，
+                            // 故无需按 itemID 再判一次。去重防止磁盘重载与完成回调重复插同一条。
+                            if !qaEntries.contains(where: { $0.id == entry.id }) {
+                                qaEntries.append(entry)
+                            }
+                        }
                     }
                 )
             }
@@ -1213,6 +1233,23 @@ private struct VideoDetail: View {
         )
         if next != current {
             sidePaneModeRaw = next.rawValue
+        }
+    }
+
+    private func loadQA(for itemID: UUID) {
+        qaLoadTask?.cancel()
+        qaEntries = []
+        let url = WatchQAStore.fileURL(itemID: itemID, in: store.mediaFolder)
+        qaLoadTask = Task {
+            let loaded = await Task.detached(priority: .utility) {
+                WatchQAStore.load(from: url)
+            }.value
+            guard !Task.isCancelled, itemID == item.id else { return }
+            var merged = loaded
+            for entry in qaEntries where !merged.contains(where: { $0.id == entry.id }) {
+                merged.append(entry)
+            }
+            qaEntries = merged
         }
     }
 
@@ -1386,7 +1423,7 @@ private struct VideoDetail: View {
     }
 
     private var prefersOneSidePane: Bool {
-        windowWidth < 1160 && item.hasSidePaneContent
+        windowWidth < 1160 && showsSidePane
     }
 
     private func collapseSidebarForNarrowChapterLayoutIfNeeded() {
@@ -1997,6 +2034,7 @@ private struct PlayerControlButton: View {
 private struct ChapterSidebar: View {
     let chapters: [VideoChapter]
     let subtitleCues: [VideoSubtitleCue]
+    let qaEntries: [WatchQAEntry]
     let hasSubtitleSource: Bool
     let currentTime: Double
     let isPresented: Bool
@@ -2009,6 +2047,7 @@ private struct ChapterSidebar: View {
     @AppStorage("sidePaneMode") private var sidePaneModeRaw = SidePaneMode.chapters.rawValue
     @State private var activeCueIndex: Int?
     @State private var displayCues: [VideoSubtitleCue] = []
+    @State private var expandedQAIDs: Set<UUID> = []
     @State private var autoFollowSuspendedUntil = Date.distantPast
     @State private var ignoreLiveScrollUntil = Date.distantPast
     /// 递增以触发 ScrollViewReader 滚到当前句（含暂停结束后的定时恢复）。
@@ -2071,13 +2110,22 @@ private struct ChapterSidebar: View {
             lastTrackedTime = Double.nan
             refreshActiveCue(at: currentTime)
         }
+        .onChange(of: qaEntries) { entries in
+            let visible = Set(entries.map(\.id))
+            expandedQAIDs = expandedQAIDs.intersection(visible)
+        }
     }
 
     /// 时级视频的时间码是 h:mm:ss，按内容预留列宽，避免切换时整列推移。
     private var timeColumnWidth: CGFloat {
         let needsHours = chapters.contains { $0.startTime >= 3600 }
             || subtitleCues.contains { $0.startTime >= 3600 }
+            || qaEntries.contains { $0.time >= 3600 }
         return needsHours ? 64 : 52
+    }
+
+    private var qaInsertions: WatchQATimeline.Insertions {
+        WatchQATimeline.insertions(cues: displayCues, entries: qaEntries)
     }
 
     private var header: some View {
@@ -2190,7 +2238,7 @@ private struct ChapterSidebar: View {
 
     @ViewBuilder
     private var lyricsList: some View {
-        if subtitleCues.isEmpty {
+        if subtitleCues.isEmpty && qaEntries.isEmpty {
             sidePaneEmptyState(
                 title: "暂无字幕",
                 detail: hasSubtitleSource ? "字幕仍在加载，或文件无法解析。" : "当前视频没有可用字幕。"
@@ -2199,6 +2247,9 @@ private struct ChapterSidebar: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
+                        ForEach(qaInsertions.leading) { entry in
+                            qaCard(entry)
+                        }
                         ForEach(displayCues.indices, id: \.self) { index in
                             let cue = displayCues[index]
                             let isCurrent = activeCueIndex == index
@@ -2227,6 +2278,11 @@ private struct ChapterSidebar: View {
                             }
                             .buttonStyle(.plain)
                             .id(index)
+                            if qaInsertions.after.indices.contains(index) {
+                                ForEach(qaInsertions.after[index]) { entry in
+                                    qaCard(entry)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 8)
@@ -2269,6 +2325,71 @@ private struct ChapterSidebar: View {
                     }
                 }
             }
+        }
+    }
+
+    private func qaCard(_ entry: WatchQAEntry) -> some View {
+        let isExpanded = expandedQAIDs.contains(entry.id)
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Button {
+                selectCueTime(entry.time)
+            } label: {
+                Text(formatTime(entry.time))
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(Color.secondary)
+                    .frame(width: timeColumnWidth, alignment: .trailing)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("跳到提问时刻")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Button {
+                    selectCueTime(entry.time)
+                } label: {
+                    Text(SubtitleSentenceBlocks.withCJKLatinSpacing(entry.question))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("跳到提问时刻")
+
+                Button {
+                    if isExpanded {
+                        expandedQAIDs.remove(entry.id)
+                    } else {
+                        expandedQAIDs.insert(entry.id)
+                    }
+                } label: {
+                    Text(SubtitleSentenceBlocks.withCJKLatinSpacing(entry.answer))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(isExpanded ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(isExpanded ? "收起回答" : "展开回答")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 14)
+        .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(OpenMyChrome.raise.opacity(0.88))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(OpenMyChrome.hair)
         }
     }
 

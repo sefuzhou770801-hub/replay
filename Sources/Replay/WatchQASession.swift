@@ -35,12 +35,19 @@ enum WatchQAFrameCapture {
 }
 
 enum WatchQAClient {
+    /// 流式结果：任务内部累积的完整回答，以及是否收到 `message_stop` 完成事件。
+    struct StreamResult {
+        let text: String
+        let completed: Bool
+    }
+
+    @discardableResult
     static func stream(
         input: WatchQARequestInput,
         apiKey: String,
         session: URLSession = .shared,
         onDelta: @escaping (String) -> Void
-    ) async throws {
+    ) async throws -> StreamResult {
         var request = URLRequest(url: WatchQARequestBuilder.endpoint)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -61,14 +68,25 @@ enum WatchQAClient {
             throw WatchQAClientError(message: httpErrorMessage(status: http.statusCode, body: body))
         }
 
+        // 回答在流任务内部独立累积，不依赖界面上可变的 answer 状态。
+        // 逐行判定复用 WatchQASSEParser.step，与 reduce（及其测试）同一规则。
+        var accumulated = ""
         for try await line in bytes.lines {
+            let step = WatchQASSEParser.step(line: line)
+            // 先认完成事件：收到 message_stop 立即返回完整回答，不再检查取消，
+            // 保证「回答已完成但浮层刚被关闭」时，已完成的记录仍会落盘。
+            if case .completed = step {
+                return StreamResult(text: accumulated, completed: true)
+            }
             try Task.checkCancellation()
-            if let delta = WatchQASSEParser.textDelta(fromLine: line), !delta.isEmpty {
+            if case .delta(let delta) = step {
+                accumulated += delta
                 await MainActor.run {
                     onDelta(delta)
                 }
             }
         }
+        return StreamResult(text: accumulated, completed: false)
     }
 
     private static func httpErrorMessage(status: Int, body: String) -> String {
@@ -89,6 +107,9 @@ enum WatchQAClient {
 
 @MainActor
 final class WatchQASession: ObservableObject {
+    static let persistFailedHint = "回答没有存上，可重试"
+    static let incompleteHint = "回答没说完就断了，没有存上，可重试"
+
     @Published var isPresented = false
     @Published var question = ""
     @Published var answer = ""
@@ -128,7 +149,13 @@ final class WatchQASession: ObservableObject {
         isStreaming = false
     }
 
-    func submit(item: WatchItem, snapshot: PlaybackSnapshot, subtitleTrack: VideoSubtitleTrack?) {
+    func submit(
+        item: WatchItem,
+        snapshot: PlaybackSnapshot,
+        subtitleTrack: VideoSubtitleTrack?,
+        sidecar: WatchQASidecar? = nil,
+        onPersisted: ((WatchQAEntry) -> Void)? = nil
+    ) {
         guard let apiKey = WatchQAAPIKey.resolve() else {
             statusMessage = WatchQAAPIKey.missingKeyHint
             return
@@ -137,6 +164,7 @@ final class WatchQASession: ObservableObject {
         guard !trimmed.isEmpty, !isStreaming else { return }
 
         let currentTime = snapshot.currentTime
+        let askedAt = Date()
         let title = item.title
         let author = item.author
         let chapters = item.availableChapters
@@ -174,8 +202,9 @@ final class WatchQASession: ObservableObject {
                 jpegBase64: jpeg,
                 question: trimmed
             )
+            let result: WatchQAClient.StreamResult
             do {
-                try await WatchQAClient.stream(input: input, apiKey: apiKey) { delta in
+                result = try await WatchQAClient.stream(input: input, apiKey: apiKey) { delta in
                     self?.answer += delta
                 }
             } catch is CancellationError {
@@ -183,9 +212,38 @@ final class WatchQASession: ObservableObject {
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.statusMessage = error.localizedDescription
-            }
-            if !Task.isCancelled {
                 self?.isStreaming = false
+                return
+            }
+            self?.isStreaming = false
+            // 用流任务内部累积的不可变文本落盘，不读可变界面状态 answer（关闭浮层会清空它）。
+            guard WatchQAPersistDecision.shouldPersist(
+                completed: result.completed,
+                answer: result.text
+            ) else {
+                // 流被截断、没等到 message_stop：半截回答不落盘，但明确提示，不静默丢。
+                if !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self?.statusMessage = WatchQASession.incompleteHint
+                }
+                return
+            }
+            guard let sidecar else { return }
+            let entry = WatchQAEntry(
+                id: UUID(),
+                time: currentTime,
+                question: trimmed,
+                answer: result.text,
+                askedAt: askedAt,
+                model: WatchQARequestBuilder.model
+            )
+            // 落盘经串行 actor，且不响应取消：完成的记录必写，关闭浮层只影响显示。
+            switch await WatchQAStore.shared.persist(entry, to: sidecar) {
+            case .persisted:
+                onPersisted?(entry)
+            case .failed:
+                self?.statusMessage = WatchQASession.persistFailedHint
+            case .dropped:
+                break
             }
         }
     }
