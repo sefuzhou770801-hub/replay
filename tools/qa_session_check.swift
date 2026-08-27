@@ -16,11 +16,21 @@ final class PlaybackCommandCenter: @unchecked Sendable {
     func play() {}
 }
 
-/// 为 `URLSession`（含 `.shared`）提供可控的 SSE 响应，驱动真实的 `WatchQAClient.stream`。
+/// 为 `URLSession`（含 `.shared`）提供**可分段**的 SSE 响应，驱动真实的 `WatchQAClient.stream`。
+/// `gateAfter >= 0` 时，交付该段后阻塞在 `gate` 上，给测试留出交错点（放行前先 dismiss）。
 final class MockSSEProtocol: URLProtocol, @unchecked Sendable {
     // 串行测试：每次请求前设好，请求期间不变。
     nonisolated(unsafe) static var status = 200
-    nonisolated(unsafe) static var body = ""
+    nonisolated(unsafe) static var segments: [String] = []
+    nonisolated(unsafe) static var gateAfter = -1
+    nonisolated(unsafe) static var gate = DispatchSemaphore(value: 0)
+
+    /// 便捷：一次性整段交付，无交错点。
+    static func setFullBody(status: Int, body: String) {
+        Self.status = status
+        Self.segments = [body]
+        Self.gateAfter = -1
+    }
 
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "api.anthropic.com"
@@ -34,7 +44,10 @@ final class MockSSEProtocol: URLProtocol, @unchecked Sendable {
             headerFields: ["Content-Type": "text/event-stream"]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(Self.body.utf8))
+        for (index, segment) in Self.segments.enumerated() {
+            client?.urlProtocol(self, didLoad: Data(segment.utf8))
+            if index == Self.gateAfter { Self.gate.wait() }
+        }
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
@@ -63,6 +76,7 @@ struct QASessionCheck {
         try await checkSubmitPersistsAndFiresOnPersisted(video: video)
         try await checkSubmitWriteFailureDoesNotFireOnPersisted(video: video)
         try await checkSubmitDroppedWhenDeletedDoesNotFire(video: video)
+        try await checkCompletedAnswerSurvivesDismiss(video: video)
 
         print("qa_session_check=passed")
     }
@@ -126,8 +140,7 @@ struct QASessionCheck {
     /// 收到 message_stop 后：完整回答经 actor 写入 sidecar，且 onPersisted 被回调。
     /// 覆盖「onPersisted 仅在真实写入成功后触发」与「message_stop → 落盘」两条链。
     private static func checkSubmitPersistsAndFiresOnPersisted(video: URL) async throws {
-        MockSSEProtocol.status = 200
-        MockSSEProtocol.body = delta("画面里是大象") + stop
+        MockSSEProtocol.setFullBody(status: 200, body: delta("画面里是大象") + stop)
         let sidecar = freshSidecar()
         defer { try? FileManager.default.removeItem(at: sidecar.url) }
         let recorder = Recorder()
@@ -145,8 +158,7 @@ struct QASessionCheck {
 
     /// 写入失败（sidecar 指向不存在父目录）：不回调 onPersisted，浮层提示失败，磁盘无文件。
     private static func checkSubmitWriteFailureDoesNotFireOnPersisted(video: URL) async throws {
-        MockSSEProtocol.status = 200
-        MockSSEProtocol.body = delta("会失败") + stop
+        MockSSEProtocol.setFullBody(status: 200, body: delta("会失败") + stop)
         let badFolder = FileManager.default.temporaryDirectory
             .appendingPathComponent("qa-session-nodir-\(UUID().uuidString)", isDirectory: true)
         let sidecar = WatchQASidecar(itemID: UUID(), folder: badFolder)
@@ -166,8 +178,7 @@ struct QASessionCheck {
 
     /// 视频已删除（itemID 打了删除标记）：persist 返回 .dropped，不回调 onPersisted，不提示，无文件。
     private static func checkSubmitDroppedWhenDeletedDoesNotFire(video: URL) async throws {
-        MockSSEProtocol.status = 200
-        MockSSEProtocol.body = delta("已删除") + stop
+        MockSSEProtocol.setFullBody(status: 200, body: delta("已删除") + stop)
         let sidecar = freshSidecar()
         defer { try? FileManager.default.removeItem(at: sidecar.url) }
         // 生产 submit 走 WatchQAStore.shared，这里对同一 itemID 预先打删除标记。
@@ -184,6 +195,63 @@ struct QASessionCheck {
         precondition(entry == nil, "已删除视频不得回调 onPersisted")
         precondition(status == nil, "已删除是静默丢弃，不提示失败")
         precondition(!FileManager.default.fileExists(atPath: sidecar.url.path), "删除后不得复活 sidecar")
+    }
+
+    /// 关闭浮层竞态：回答已完成（message_stop 收到）但字节流未关时调 dismiss()，
+    /// 已完成的回答仍须完整落盘（落盘读流内累积的 result.text，不读被 dismiss 清空的 answer）。
+    /// 故障注入自查：把落盘源改回 self.answer，本用例超时转红。
+    private static func checkCompletedAnswerSurvivesDismiss(video: URL) async throws {
+        let answer = "画面里是大象"
+        MockSSEProtocol.status = 200
+        MockSSEProtocol.segments = [delta(answer), stop] // 先交付增量，挂在 gate 上等放行 message_stop
+        MockSSEProtocol.gateAfter = 0
+        MockSSEProtocol.gate = DispatchSemaphore(value: 0)
+        let sidecar = freshSidecar()
+        defer { try? FileManager.default.removeItem(at: sidecar.url) }
+        let recorder = Recorder()
+
+        setenv("ANTHROPIC_API_KEY", "sk-test", 1)
+        let session = await MainActor.run { () -> WatchQASession in
+            PlaybackCommandCenter.shared.testPlayer = AVPlayer(url: video)
+            let s = WatchQASession()
+            s.present() // isPresented = true，dismiss() 才会真正生效
+            s.question = "画面里是什么"
+            s.submit(
+                item: makeItem(id: sidecar.itemID),
+                snapshot: PlaybackSnapshot(currentTime: 0),
+                subtitleTrack: nil,
+                sidecar: sidecar
+            ) { entry in recorder.entry = entry }
+            return s
+        }
+
+        // 等增量处理完（answer 填上），此刻流挂起等 message_stop，MainActor 空闲。
+        try await waitFor { session.answer == answer }
+
+        // 交错点：占住 MainActor，放行 message_stop，等协作池把它处理完（流返回、续体入队但被挡），
+        // 再 dismiss 清空 answer，然后让出 MainActor；续体随后执行落盘。
+        await MainActor.run {
+            MockSSEProtocol.gate.signal()
+            Thread.sleep(forTimeInterval: 0.25)
+            _ = session.dismiss()
+        }
+
+        // 落盘应来自 result.text；若 buggy 读被清空的 answer，则永不落盘 → waitFor 超时转红。
+        try await waitFor { recorder.entry != nil }
+        precondition(recorder.entry?.answer == answer, "已完成回答须完整落盘，不受 dismiss 清空 answer 影响")
+        precondition(
+            WatchQAStore.load(from: sidecar.url).first?.answer == answer,
+            "sidecar 内容须是完整回答"
+        )
+    }
+
+    /// 轮询 MainActor 上的条件，最多 5 秒；超时视为失败（用于让回退路径转红）。
+    private static func waitFor(_ predicate: @escaping @Sendable @MainActor () -> Bool) async throws {
+        for _ in 0..<500 {
+            if await MainActor.run(body: predicate) { return }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        preconditionFailure("等待超时")
     }
 
     // MARK: - 驱动 submit
@@ -227,8 +295,7 @@ struct QASessionCheck {
     }
 
     private static func session(status: Int, body: String) -> URLSession {
-        MockSSEProtocol.status = status
-        MockSSEProtocol.body = body
+        MockSSEProtocol.setFullBody(status: status, body: body)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockSSEProtocol.self]
         return URLSession(configuration: config)

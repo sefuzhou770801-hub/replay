@@ -126,3 +126,20 @@ compile_and_run qa_session \
     "$project_dir/Sources/Replay/WatchQAStore.swift" \
     "$project_dir/Sources/Replay/WatchQASession.swift" \
     "$project_dir/tools/qa_session_check.swift"
+
+# 删除接线：经真实生产入口 QueueStore.remove（注入隔离目录）验证 qa sidecar 一并清掉。
+compile_and_run qa_remove \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/ChapterMetadata.swift" \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleTrackRank.swift" \
+    "$project_dir/Sources/Replay/NetworkMonitor.swift" \
+    "$project_dir/Sources/Replay/PowerModeMonitor.swift" \
+    "$project_dir/Sources/Replay/ReplayMigration.swift" \
+    "$project_dir/Sources/Replay/QueueRowMeta.swift" \
+    "$project_dir/Sources/Replay/URLIntake.swift" \
+    "$project_dir/Sources/Replay/DownloadRetryPolicy.swift" \
+    "$project_dir/Sources/Replay/DownloadEngine.swift" \
+    "$project_dir/Sources/Replay/WatchQAStore.swift" \
+    "$project_dir/Sources/Replay/QueueStore.swift" \
+    "$project_dir/tools/qa_remove_check.swift"
