@@ -16,6 +16,13 @@ compile_and_run url_intake \
     "$project_dir/Sources/Replay/URLIntake.swift" \
     "$project_dir/tools/url_intake_check.swift"
 
+compile_and_run channel_watch \
+    "$project_dir/Sources/Replay/URLIntake.swift" \
+    "$project_dir/Sources/Replay/ChannelLink.swift" \
+    "$project_dir/Sources/Replay/PlaylistListing.swift" \
+    "$project_dir/Sources/Replay/ChannelSubscription.swift" \
+    "$project_dir/tools/channel_watch_check.swift"
+
 compile_and_run retry_policy \
     "$project_dir/Sources/Replay/DownloadRetryPolicy.swift" \
     "$project_dir/tools/retry_policy_check.swift"
