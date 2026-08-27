@@ -102,3 +102,10 @@ compile_and_run subtitle_blocks \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
     "$project_dir/tools/subtitle_blocks_check.swift"
+
+compile_and_run qa_context \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/ChapterMetadata.swift" \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/WatchQAContext.swift" \
+    "$project_dir/tools/qa_context_check.swift"

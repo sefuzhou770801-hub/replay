@@ -900,6 +900,8 @@ private struct VideoDetail: View {
     @State private var volumeHUDValue = PlaybackVolumePreference.load()
     @State private var volumeHUDVisible = false
     @State private var volumeHUDDismissalTask: Task<Void, Never>?
+    @StateObject private var watchQA = WatchQASession()
+    @FocusState private var isQuestionFieldFocused: Bool
     let item: WatchItem
     let sidebarCollapsed: Bool
     let windowWidth: CGFloat
@@ -919,6 +921,9 @@ private struct VideoDetail: View {
                 loadSubtitles(path: path)
             }
             collapseSidebarForNarrowChapterLayoutIfNeeded()
+            PlaybackCommandCenter.shared.setAskOverlayDismissHandler { [watchQA] in
+                watchQA.dismiss()
+            }
         }
         .onChange(of: item.id) { newID in
             subtitleMode = SubtitleModeStore.mode(for: newID)
@@ -931,6 +936,21 @@ private struct VideoDetail: View {
         .onDisappear {
             subtitleLoadTask?.cancel()
             volumeHUDDismissalTask?.cancel()
+            PlaybackCommandCenter.shared.setAskOverlayDismissHandler(nil)
+            watchQA.dismiss(resume: false)
+        }
+        .onChange(of: watchQA.isPresented) { presented in
+            if presented {
+                DispatchQueue.main.async {
+                    isQuestionFieldFocused = true
+                }
+            } else {
+                isQuestionFieldFocused = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .replayTextFocusShouldResign)) { notification in
+            guard watchQA.isPresented, TextFocusResignReason.from(notification) == .escape else { return }
+            watchQA.dismiss()
         }
         .onChange(of: item.availableChapters.isEmpty) { isEmpty in
             recomputeSidePaneMode(hasChapters: !isEmpty)
@@ -1078,7 +1098,8 @@ private struct VideoDetail: View {
                             setPlaybackRate: { PlaybackCommandCenter.shared.setPlaybackRate(to: $0) },
                             hasSubtitles: subtitleTrack != nil,
                             subtitleMode: subtitleMode,
-                            toggleSubtitles: cycleSubtitleMode
+                            toggleSubtitles: cycleSubtitleMode,
+                            askQuestion: { PlaybackCommandCenter.shared.askQuestion() }
                         )
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1121,7 +1142,8 @@ private struct VideoDetail: View {
                             onProgress: { store.updatePlaybackPosition($0, for: item.id) },
                             onStateChange: { playback = $0 },
                             onVolumeChange: showVolumeHUD,
-                            onEnded: { store.markWatched(item.id) }
+                            onEnded: { store.markWatched(item.id) },
+                            onAskQuestion: { watchQA.present() }
                         )
                         .id(fileURL)
                         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -1139,6 +1161,20 @@ private struct VideoDetail: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .allowsHitTesting(false)
                 .transition(.opacity)
+            }
+
+            if watchQA.isPresented {
+                WatchQAOverlay(
+                    session: watchQA,
+                    isQuestionFieldFocused: $isQuestionFieldFocused,
+                    onSubmit: {
+                        watchQA.submit(
+                            item: item,
+                            snapshot: playback,
+                            subtitleTrack: subtitleTrack
+                        )
+                    }
+                )
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
@@ -1433,6 +1469,7 @@ private struct PlaybackControls: View {
     let hasSubtitles: Bool
     let subtitleMode: SubtitleDisplayMode
     let toggleSubtitles: () -> Void
+    let askQuestion: () -> Void
 
     private var subtitleModeHelp: String {
         switch subtitleMode {
@@ -1517,6 +1554,12 @@ private struct PlaybackControls: View {
                 isEnabled: hasSubtitles,
                 isSelected: subtitleMode != .off && hasSubtitles,
                 action: toggleSubtitles
+            )
+
+            PlayerControlButton(
+                systemImage: "questionmark.bubble",
+                help: "看时问答（A）",
+                action: askQuestion
             )
 
             AirPlayRoutePicker()

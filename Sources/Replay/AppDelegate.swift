@@ -79,7 +79,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     PlaybackCommandCenter.shared.toggleFullscreen()
                 }
                 return nil
+            case .askQuestion:
+                if !event.isARepeat {
+                    return PlaybackCommandCenter.shared.askQuestion() ? nil : event
+                }
+                return nil
             case .exitFullscreen:
+                if PlaybackCommandCenter.shared.dismissAskOverlay() {
+                    return nil
+                }
                 return PlaybackCommandCenter.shared.exitFullscreen() ? nil : event
             case .skip(let seconds):
                 return PlaybackCommandCenter.shared.skip(by: seconds) ? nil : event
