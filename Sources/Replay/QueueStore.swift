@@ -487,6 +487,7 @@ final class QueueStore: ObservableObject {
         cancelRecovery(for: id)
         downloader.cancel(itemID: id)
         if deleteMedia {
+            try? FileManager.default.removeItem(at: WatchQAStore.fileURL(itemID: id, in: mediaFolder))
             let prefix = id.uuidString + "."
             let files = (try? FileManager.default.contentsOfDirectory(
                 at: mediaFolder,

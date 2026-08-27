@@ -128,7 +128,13 @@ final class WatchQASession: ObservableObject {
         isStreaming = false
     }
 
-    func submit(item: WatchItem, snapshot: PlaybackSnapshot, subtitleTrack: VideoSubtitleTrack?) {
+    func submit(
+        item: WatchItem,
+        snapshot: PlaybackSnapshot,
+        subtitleTrack: VideoSubtitleTrack?,
+        persistURL: URL? = nil,
+        onPersisted: ((WatchQAEntry) -> Void)? = nil
+    ) {
         guard let apiKey = WatchQAAPIKey.resolve() else {
             statusMessage = WatchQAAPIKey.missingKeyHint
             return
@@ -137,6 +143,7 @@ final class WatchQASession: ObservableObject {
         guard !trimmed.isEmpty, !isStreaming else { return }
 
         let currentTime = snapshot.currentTime
+        let askedAt = Date()
         let title = item.title
         let author = item.author
         let chapters = item.availableChapters
@@ -183,10 +190,25 @@ final class WatchQASession: ObservableObject {
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.statusMessage = error.localizedDescription
-            }
-            if !Task.isCancelled {
                 self?.isStreaming = false
+                return
             }
+            self?.isStreaming = false
+            let completedAnswer = self?.answer ?? ""
+            guard !completedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let persistURL else { return }
+            let entry = WatchQAEntry(
+                id: UUID(),
+                time: currentTime,
+                question: trimmed,
+                answer: completedAnswer,
+                askedAt: askedAt,
+                model: WatchQARequestBuilder.model
+            )
+            await Task.detached {
+                WatchQAStore.append(entry, to: persistURL)
+            }.value
+            onPersisted?(entry)
         }
     }
 }

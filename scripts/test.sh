@@ -109,3 +109,8 @@ compile_and_run qa_context \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/WatchQAContext.swift" \
     "$project_dir/tools/qa_context_check.swift"
+
+compile_and_run qa_store \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/WatchQAStore.swift" \
+    "$project_dir/tools/qa_store_check.swift"
