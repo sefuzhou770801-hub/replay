@@ -86,8 +86,14 @@ struct QueueRowMetaCheck {
             canRevealLocalFile: true
         )
         precondition(readyWithFile == [
-            .toggleWatched, .rename, .openOriginal, .revealInFinder, .divider, .delete
+            .toggleWatched, .rename, .openOriginal, .revealInFinder, .generateBrief, .divider, .delete
         ])
+        precondition(QueueRowMeta.visibleTitle(for: .generateBrief, isWatched: false) == "生成预审")
+        let queuedMenu = QueueRowMeta.contextMenuItems(
+            state: .queued,
+            canRevealLocalFile: false
+        )
+        precondition(!queuedMenu.contains(.generateBrief), "未就绪条目不得出现生成预审")
         precondition(QueueRowMeta.visibleTitle(for: .toggleWatched, isWatched: true) == "移回队列")
         precondition(QueueRowMeta.visibleTitle(for: .toggleWatched, isWatched: false) == "标记已看")
 

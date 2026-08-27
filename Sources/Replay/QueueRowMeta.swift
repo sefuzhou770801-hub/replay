@@ -86,6 +86,7 @@ enum QueueRowMeta {
         case retryDownload
         case openOriginal
         case revealInFinder
+        case generateBrief
         case divider
         case delete
     }
@@ -113,6 +114,9 @@ enum QueueRowMeta {
         if canRevealLocalFile {
             items.append(.revealInFinder)
         }
+        if state == .ready {
+            items.append(.generateBrief)
+        }
         items.append(contentsOf: [.divider, .delete])
         return items
     }
@@ -129,6 +133,8 @@ enum QueueRowMeta {
             return "打开原网页"
         case .revealInFinder:
             return "在访达中显示"
+        case .generateBrief:
+            return "生成预审"
         case .divider:
             return ""
         case .delete:

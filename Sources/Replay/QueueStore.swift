@@ -63,6 +63,8 @@ final class QueueStore: ObservableObject {
     @Published var selection: UUID?
     @Published var lastIntakeError: String?
     @Published private(set) var intakeNotice: IntakeNotice?
+    @Published private(set) var briefs: [UUID: WatchBrief] = [:]
+    @Published private(set) var briefStatuses: [UUID: WatchBriefStatus] = [:]
 
     private let downloader = DownloadEngine()
     private let networkMonitor = NetworkMonitor()
@@ -79,6 +81,8 @@ final class QueueStore: ObservableObject {
     private var waitingForNetwork: Set<UUID> = []
     private var waitingForPower: Set<UUID> = []
     private var powerCancellationIDs: Set<UUID> = []
+    private var pendingBriefIDs: Set<UUID> = []
+    private var briefTasks: [UUID: Task<Void, Never>] = [:]
     let mediaFolder: URL
 
     init() {
@@ -454,6 +458,7 @@ final class QueueStore: ObservableObject {
                 guard case .success(let subtitleURL) = result else { return }
                 self.update(id) { $0.subtitleFilePath = subtitleURL?.path ?? "" }
                 self.save()
+                self.considerAutoBrief(for: id)
             }
         }
     }
@@ -479,12 +484,30 @@ final class QueueStore: ObservableObject {
                 }
                 // 无论是否落盘，都把扫描结果交给 UI，避免依赖 onChange（item 值可能未刷新）
                 completion?(newPath)
+                self.considerAutoBrief(for: id)
             }
         }
     }
 
+    func loadBrief(for id: UUID) {
+        if briefs[id] != nil { return }
+        let url = WatchBriefFile.url(for: id, in: mediaFolder)
+        if let brief = WatchBriefFile.load(from: url) {
+            briefs[id] = brief
+        }
+    }
+
+    func requestBrief(for id: UUID) {
+        startBriefGeneration(for: id, manual: true)
+    }
+
     func remove(_ id: UUID, deleteMedia: Bool = true) {
         cancelRecovery(for: id)
+        briefTasks[id]?.cancel()
+        briefTasks[id] = nil
+        pendingBriefIDs.remove(id)
+        briefs[id] = nil
+        briefStatuses[id] = nil
         downloader.cancel(itemID: id)
         if deleteMedia {
             let prefix = id.uuidString + "."
@@ -567,6 +590,8 @@ final class QueueStore: ObservableObject {
                 $0.errorMessage = nil
             }
             save()
+            pendingBriefIDs.insert(id)
+            considerAutoBrief(for: id)
         case .failure(let error):
             if powerCancellationIDs.remove(id) != nil {
                 if powerMonitor.isLowPowerModeEnabled {
@@ -789,6 +814,93 @@ final class QueueStore: ObservableObject {
         for item in waiting {
             let isRetry = item.progress > 0 || item.errorMessage != nil
             beginDownload(for: item.id, isRetry: isRetry)
+        }
+    }
+
+    private func considerAutoBrief(for id: UUID) {
+        startBriefGeneration(for: id, manual: false)
+    }
+
+    private func startBriefGeneration(for id: UUID, manual: Bool) {
+        guard briefTasks[id] == nil else { return }
+        guard let existing = item(with: id) else { return }
+        let chineseURL = WatchBriefSubtitle.firstChineseSubtitle(itemID: id, in: mediaFolder)
+        let listedPath = existing.subtitleFilePath ?? ""
+        let listedExists = !listedPath.isEmpty && FileManager.default.fileExists(atPath: listedPath)
+        let sourceURL = chineseURL ?? (listedExists ? URL(fileURLWithPath: listedPath) : nil)
+        let outputURL = WatchBriefFile.url(for: id, in: mediaFolder)
+        let briefExists = FileManager.default.fileExists(atPath: outputURL.path)
+        let apiKey = WatchBriefAPIKey.resolve()
+
+        if manual {
+            switch WatchBriefPolicy.manualAction(subtitlePresent: sourceURL != nil, hasAPIKey: apiKey != nil) {
+            case .missingKey:
+                showIntakeNotice(
+                    title: "无法生成预审",
+                    detail: WatchBriefAPIKey.missingKeyHint,
+                    systemImage: "key"
+                )
+                return
+            case .missingSubtitle:
+                showIntakeNotice(
+                    title: "无法生成预审",
+                    detail: WatchBriefError.missingSubtitle.localizedDescription,
+                    systemImage: "captions.bubble"
+                )
+                return
+            case .generate:
+                break
+            }
+        } else {
+            let action = WatchBriefPolicy.autoAction(
+                isNewlyCompleted: pendingBriefIDs.contains(id),
+                chineseSubtitlePresent: chineseURL != nil,
+                briefAlreadyExists: briefExists,
+                hasAPIKey: apiKey != nil
+            )
+            guard action == .generate else { return }
+        }
+
+        guard let apiKey, let sourceURL else { return }
+        let title = existing.title
+        let author = existing.author
+        briefStatuses[id] = .generating
+        briefTasks[id] = Task { [weak self] in
+            defer { self?.briefTasks[id] = nil }
+            do {
+                try Task.checkCancellation()
+                guard let track = VideoSubtitleTrack(contentsOf: sourceURL),
+                      !track.cues.isEmpty else {
+                    throw WatchBriefError.emptyTranscript
+                }
+                let generated = try await WatchBriefClient.generate(
+                    title: title,
+                    author: author,
+                    cues: track.cues,
+                    apiKey: apiKey
+                )
+                try Task.checkCancellation()
+                try WatchBriefFile.save(generated.brief, to: outputURL)
+                guard let self else { return }
+                self.briefs[id] = generated.brief
+                self.briefStatuses[id] = .idle
+                self.pendingBriefIDs.remove(id)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self else { return }
+                self.briefStatuses[id] = .failed(error.localizedDescription)
+                if !manual {
+                    self.pendingBriefIDs.remove(id)
+                }
+                if manual {
+                    self.showIntakeNotice(
+                        title: "预审失败",
+                        detail: error.localizedDescription,
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+            }
         }
     }
 

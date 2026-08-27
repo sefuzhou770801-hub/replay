@@ -79,6 +79,12 @@ compile_and_run queue_row_meta \
     "$project_dir/Sources/Replay/QueueRowMeta.swift" \
     "$project_dir/tools/queue_row_meta_check.swift"
 
+compile_and_run watch_brief \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleTrackRank.swift" \
+    "$project_dir/Sources/Replay/WatchBrief.swift" \
+    "$project_dir/tools/watch_brief_check.swift"
+
 compile_and_run side_pane_selection \
     "$project_dir/Sources/Replay/SidePaneSelection.swift" \
     "$project_dir/tools/side_pane_selection_check.swift"
