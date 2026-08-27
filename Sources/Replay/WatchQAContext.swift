@@ -142,15 +142,57 @@ enum WatchQARequestBuilder {
 
 enum WatchQASSEParser {
     static func textDelta(fromLine line: String) -> String? {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("data:") else { return nil }
-        let payload = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
-        guard payload != "[DONE]",
-              let data = payload.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let object = dataObject(fromLine: line),
               let delta = object["delta"] as? [String: Any],
               let text = delta["text"] as? String
         else { return nil }
         return text
+    }
+
+    /// 是否为 `message_stop` 完成事件。收到即视为回答完整，据此决定落盘，
+    /// 不再依赖字节流是否走完，避免完成后立刻关闭浮层丢掉已完成的记录。
+    static func isCompletion(line: String) -> Bool {
+        guard let object = dataObject(fromLine: line),
+              let type = object["type"] as? String
+        else { return false }
+        return type == "message_stop"
+    }
+
+    /// 单行 SSE 的处理决定，`reduce` 与 `WatchQAClient.stream` 共用同一规则，避免两处逐行逻辑漂移。
+    enum Step: Equatable {
+        case delta(String) // 文本增量，累积并回显
+        case completed     // message_stop，回答完整
+        case ignore        // 其他事件（message_start、ping、[DONE] 等），跳过
+    }
+
+    static func step(line: String) -> Step {
+        if isCompletion(line: line) { return .completed }
+        if let delta = textDelta(fromLine: line), !delta.isEmpty { return .delta(delta) }
+        return .ignore
+    }
+
+    /// 把 SSE 行序列归约成累积回答与是否完成，是流式落盘判定的口径来源：
+    /// 收到 `message_stop` 立即停止累积并标记完成，其后的行一律忽略。
+    /// `WatchQAClient.stream` 对实时字节流套用同一 `step` 规则（外加实时回显与取消）。
+    static func reduce(lines: [String]) -> (text: String, completed: Bool) {
+        var text = ""
+        for line in lines {
+            switch step(line: line) {
+            case .completed: return (text, true)
+            case .delta(let delta): text += delta
+            case .ignore: break
+            }
+        }
+        return (text, false)
+    }
+
+    private static func dataObject(fromLine line: String) -> [String: Any]? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("data:") else { return nil }
+        let payload = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
+        guard payload != "[DONE]",
+              let data = payload.data(using: .utf8)
+        else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 }

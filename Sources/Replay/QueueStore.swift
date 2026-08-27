@@ -487,10 +487,15 @@ final class QueueStore: ObservableObject {
         cancelRecovery(for: id)
         downloader.cancel(itemID: id)
         if deleteMedia {
-            try? FileManager.default.removeItem(at: WatchQAStore.fileURL(itemID: id, in: mediaFolder))
+            let folder = mediaFolder
+            // 删除协调分两手：
+            // (1) 串行 actor 打进程内删除标记并删 qa.json，丢弃流式完成的在途/后续追加，防止复活成孤儿。
+            // (2) 同步前缀扫描立即删除全部 <uuid>.* 文件（含 qa.json），保证进程即使随后退出也不留孤儿。
+            // 两者对 qa.json 是幂等重复删除；标记保证追加不会在删除之后再复活文件。
+            Task { await WatchQAStore.shared.deleteSidecar(WatchQASidecar(itemID: id, folder: folder)) }
             let prefix = id.uuidString + "."
             let files = (try? FileManager.default.contentsOfDirectory(
-                at: mediaFolder,
+                at: folder,
                 includingPropertiesForKeys: nil,
                 options: [.skipsHiddenFiles]
             )) ?? []

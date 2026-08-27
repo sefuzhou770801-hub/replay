@@ -2,12 +2,17 @@ import Foundation
 
 @main
 struct QAStoreCheck {
-    static func main() throws {
+    static func main() async throws {
         checkFileNaming()
-        try checkRoundTrip()
-        try checkAppendOrder()
-        checkMissingEmptyAndCorrupt()
+        try await checkRoundTrip()
+        try await checkAppendOrder()
+        try await checkMissingEmptyAndCorrupt()
         checkTimelineInsert()
+        try await checkConcurrentAppendKeepsAll()
+        await checkWriteFailurePropagates()
+        try await checkDeleteMarkDiscardsAppend()
+        await checkPersistOutcomes()
+        checkShouldPersist()
         print("qa_store_check=passed")
     }
 
@@ -23,11 +28,14 @@ struct QAStoreCheck {
             url.lastPathComponent.hasPrefix(id.uuidString + "."),
             "文件名须带 UUID. 前缀，删除本地文件时才能被现有前缀扫描清掉"
         )
+        // WatchQASidecar.url 须与静态 fileURL 一致
+        precondition(WatchQASidecar(itemID: id, folder: folder).url == url)
     }
 
-    private static func checkRoundTrip() throws {
-        let url = scratchURL()
-        defer { try? FileManager.default.removeItem(at: url) }
+    private static func checkRoundTrip() async throws {
+        let store = WatchQAStore()
+        let sidecar = scratch()
+        defer { try? FileManager.default.removeItem(at: sidecar.url) }
 
         let entry = WatchQAEntry(
             id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
@@ -37,9 +45,9 @@ struct QAStoreCheck {
             askedAt: Date(timeIntervalSince1970: 1_700_000_000),
             model: "claude-sonnet-5"
         )
-        WatchQAStore.save([entry], to: url)
+        try await store.save([entry], to: sidecar)
 
-        let loaded = WatchQAStore.load(from: url)
+        let loaded = WatchQAStore.load(from: sidecar.url)
         precondition(loaded.count == 1)
         precondition(loaded[0].id == entry.id)
         precondition(loaded[0].time == 75.5)
@@ -48,7 +56,7 @@ struct QAStoreCheck {
         precondition(loaded[0].askedAt.timeIntervalSince1970 == 1_700_000_000)
         precondition(loaded[0].model == "claude-sonnet-5")
 
-        let data = try Data(contentsOf: url)
+        let data = try Data(contentsOf: sidecar.url)
         let objects = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         precondition(objects?.count == 1, "sidecar 须是对象数组")
         let object = objects?[0] ?? [:]
@@ -60,9 +68,10 @@ struct QAStoreCheck {
         precondition(object["askedAt"] as? String == "2023-11-14T22:13:20Z")
     }
 
-    private static func checkAppendOrder() throws {
-        let url = scratchURL()
-        defer { try? FileManager.default.removeItem(at: url) }
+    private static func checkAppendOrder() async throws {
+        let store = WatchQAStore()
+        let sidecar = scratch()
+        defer { try? FileManager.default.removeItem(at: sidecar.url) }
 
         let first = WatchQAEntry(
             id: UUID(),
@@ -80,14 +89,14 @@ struct QAStoreCheck {
             askedAt: Date(timeIntervalSince1970: 200),
             model: "claude-sonnet-5"
         )
-        WatchQAStore.append(first, to: url)
-        WatchQAStore.append(second, to: url)
-        let loaded = WatchQAStore.load(from: url)
+        try await store.append(first, to: sidecar)
+        try await store.append(second, to: sidecar)
+        let loaded = WatchQAStore.load(from: sidecar.url)
         precondition(loaded.map(\.question) == ["先问", "后问"], "磁盘按追加顺序，不按时间重排")
         precondition(loaded.map(\.id) == [first.id, second.id])
     }
 
-    private static func checkMissingEmptyAndCorrupt() {
+    private static func checkMissingEmptyAndCorrupt() async throws {
         let missing = scratchURL()
         precondition(
             WatchQAStore.load(from: missing).isEmpty,
@@ -119,7 +128,12 @@ struct QAStoreCheck {
         try? Data(#"{"question":"x"}"#.utf8).write(to: notArray)
         precondition(WatchQAStore.load(from: notArray).isEmpty, "非数组视为损坏")
 
-        WatchQAStore.append(
+        // 损坏文件上追加须写成合法数组，不得把坏内容留下。
+        let store = WatchQAStore()
+        let recover = scratch()
+        defer { try? FileManager.default.removeItem(at: recover.url) }
+        try? Data("{not json".utf8).write(to: recover.url)
+        try await store.append(
             WatchQAEntry(
                 id: UUID(),
                 time: 1,
@@ -128,11 +142,123 @@ struct QAStoreCheck {
                 askedAt: Date(timeIntervalSince1970: 1),
                 model: "claude-sonnet-5"
             ),
-            to: corrupt
+            to: recover
         )
         precondition(
-            WatchQAStore.load(from: corrupt).map(\.question) == ["恢复"],
+            WatchQAStore.load(from: recover.url).map(\.question) == ["恢复"],
             "损坏文件上追加须写成合法数组，不得把坏内容留下"
+        )
+    }
+
+    /// 复现脚本 replay-qa-concurrency-check：并发追加 100 条。
+    /// 串行 actor 收口后必须全保留（此前实测只剩个位数）。
+    private static func checkConcurrentAppendKeepsAll() async throws {
+        for round in 1...5 {
+            let store = WatchQAStore()
+            let sidecar = scratch()
+            defer { try? FileManager.default.removeItem(at: sidecar.url) }
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for i in 0..<100 {
+                    group.addTask {
+                        let entry = WatchQAEntry(
+                            id: UUID(),
+                            time: Double(i),
+                            question: "q\(i)",
+                            answer: "a",
+                            askedAt: Date(timeIntervalSince1970: Double(i)),
+                            model: "m"
+                        )
+                        _ = try await store.append(entry, to: sidecar)
+                    }
+                }
+                try await group.waitForAll()
+            }
+            let count = WatchQAStore.load(from: sidecar.url).count
+            precondition(count == 100, "第 \(round) 轮并发追加须全保留，实际 \(count)")
+        }
+    }
+
+    /// 复现脚本 replay-qa-write-failure-check：sidecar 指向不存在的父目录。
+    /// 写入必须上抛，调用方拿到失败结局（.failed），不得静默当成功。
+    private static func checkWriteFailurePropagates() async {
+        let store = WatchQAStore()
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("qa-missing-parent-\(UUID().uuidString)", isDirectory: true)
+        let sidecar = WatchQASidecar(itemID: UUID(), folder: folder)
+        let entry = WatchQAEntry(
+            id: UUID(), time: 1, question: "q", answer: "a",
+            askedAt: Date(timeIntervalSince1970: 1), model: "m"
+        )
+
+        var threw = false
+        do {
+            _ = try await store.append(entry, to: sidecar)
+        } catch {
+            threw = true
+        }
+        precondition(threw, "写入不存在的父目录必须抛错，不得吞掉")
+        precondition(!FileManager.default.fileExists(atPath: sidecar.url.path), "写失败不得留下文件")
+        precondition(WatchQAStore.load(from: sidecar.url).isEmpty)
+
+        let outcome = await store.persist(entry, to: sidecar)
+        precondition(outcome == .failed, "写失败落盘结局须为 .failed，界面据此不插卡")
+    }
+
+    /// 复现脚本 replay-qa-delete-race-check：删除后在途追加不得复活文件。
+    /// 串行 actor 打删除标记后，后续追加一律丢弃，qa.json 不再出现。
+    private static func checkDeleteMarkDiscardsAppend() async throws {
+        let store = WatchQAStore()
+        let sidecar = scratch()
+        defer { try? FileManager.default.removeItem(at: sidecar.url) }
+        let entry = WatchQAEntry(
+            id: UUID(), time: 1, question: "q", answer: "a",
+            askedAt: Date(timeIntervalSince1970: 1), model: "m"
+        )
+
+        let first = try await store.append(entry, to: sidecar)
+        precondition(first, "首次追加应写成功")
+        precondition(FileManager.default.fileExists(atPath: sidecar.url.path))
+
+        await store.deleteSidecar(sidecar)
+        precondition(!FileManager.default.fileExists(atPath: sidecar.url.path), "删除后 qa.json 应消失")
+
+        let second = try await store.append(entry, to: sidecar)
+        precondition(second == false, "打删除标记后追加须被丢弃并返回 false")
+        precondition(
+            !FileManager.default.fileExists(atPath: sidecar.url.path),
+            "被丢弃的追加不得复活出孤儿 qa.json"
+        )
+        precondition(WatchQAStore.load(from: sidecar.url).isEmpty)
+
+        let outcome = await store.persist(entry, to: sidecar)
+        precondition(outcome == .dropped, "删除后 persist 结局须为 .dropped，静默丢弃")
+    }
+
+    private static func checkPersistOutcomes() async {
+        let store = WatchQAStore()
+        let sidecar = scratch()
+        defer { try? FileManager.default.removeItem(at: sidecar.url) }
+        let entry = WatchQAEntry(
+            id: UUID(), time: 2, question: "问", answer: "答",
+            askedAt: Date(timeIntervalSince1970: 2), model: "m"
+        )
+        let outcome = await store.persist(entry, to: sidecar)
+        precondition(outcome == .persisted, "正常落盘结局须为 .persisted")
+        precondition(WatchQAStore.load(from: sidecar.url).count == 1, "成功落盘应写入一条")
+    }
+
+    private static func checkShouldPersist() {
+        precondition(
+            WatchQAPersistDecision.shouldPersist(completed: true, answer: "答"),
+            "完成、有答案 → 落盘"
+        )
+        precondition(
+            !WatchQAPersistDecision.shouldPersist(completed: false, answer: "答"),
+            "未收到完成事件（浮层提前关闭 / 流被截断）→ 不落盘"
+        )
+        precondition(
+            !WatchQAPersistDecision.shouldPersist(completed: true, answer: "   \n"),
+            "空白答案 → 不落盘"
         )
     }
 
@@ -203,6 +329,12 @@ struct QAStoreCheck {
         )
     }
 
+    /// actor 写入用：随机 itemID + 临时目录的 sidecar 定位。
+    private static func scratch() -> WatchQASidecar {
+        WatchQASidecar(itemID: UUID(), folder: FileManager.default.temporaryDirectory)
+    }
+
+    /// 纯 load 容错用：任意路径，可写入任意字节。
     private static func scratchURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("qa-store-\(UUID().uuidString).qa.json")

@@ -1184,9 +1184,11 @@ private struct VideoDetail: View {
                             item: item,
                             snapshot: playback,
                             subtitleTrack: subtitleTrack,
-                            persistURL: WatchQAStore.fileURL(itemID: itemID, in: store.mediaFolder)
+                            sidecar: WatchQASidecar(itemID: itemID, folder: store.mediaFolder)
                         ) { entry in
-                            guard item.id == itemID else { return }
+                            // VideoDetail 以 .id(item.id) 隔离，每个视频有独立的 qaEntries 与会话，
+                            // 完成回调只落到自己视频的列表；切走后旧视频视图连同状态一并销毁，不会污染新视频，
+                            // 故无需按 itemID 再判一次。去重防止磁盘重载与完成回调重复插同一条。
                             if !qaEntries.contains(where: { $0.id == entry.id }) {
                                 qaEntries.append(entry)
                             }
