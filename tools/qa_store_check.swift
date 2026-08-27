@@ -11,6 +11,7 @@ struct QAStoreCheck {
         try await checkConcurrentAppendKeepsAll()
         await checkWriteFailurePropagates()
         try await checkDeleteMarkDiscardsAppend()
+        try await checkDeleteRaceInterleaving()
         await checkPersistOutcomes()
         checkShouldPersist()
         print("qa_store_check=passed")
@@ -232,6 +233,53 @@ struct QAStoreCheck {
 
         let outcome = await store.persist(entry, to: sidecar)
         precondition(outcome == .dropped, "删除后 persist 结局须为 .dropped，静默丢弃")
+    }
+
+    /// 复现 `QueueStore.remove` 的删除时序（无法直接编译 QueueStore，故按其确定序列驱动真实 actor）：
+    /// 未等待的 `Task { deleteSidecar }` + 同步前缀扫描 `removeItem`，与在途 `persist` 交错。
+    /// 无论交错如何，删除标记保证这是该 itemID 最后一次动盘，收敛后不残留、不复活 qa.json。
+    private static func checkDeleteRaceInterleaving() async throws {
+        for _ in 0..<100 {
+            let store = WatchQAStore()
+            let sidecar = scratch()
+            let folder = sidecar.folder
+            let itemID = sidecar.itemID
+            let seed = WatchQAEntry(
+                id: UUID(), time: 1, question: "看过", answer: "旧答",
+                askedAt: Date(timeIntervalSince1970: 1), model: "m"
+            )
+            _ = try await store.append(seed, to: sidecar)
+
+            let inflight = WatchQAEntry(
+                id: UUID(), time: 2, question: "刚问完", answer: "在途答",
+                askedAt: Date(timeIntervalSince1970: 2), model: "m"
+            )
+            // 在途落盘（模拟流式完成的后台 persist）与删除并发。
+            async let persisted = store.persist(inflight, to: sidecar)
+            let deleteTask = Task { await store.deleteSidecar(sidecar) }
+            // 复刻 QueueStore.remove 的同步前缀扫描（含 qa.json），与 actor 幂等重复删除。
+            prefixScanDelete(itemID: itemID, in: folder)
+
+            _ = await persisted
+            await deleteTask.value
+
+            precondition(
+                !FileManager.default.fileExists(atPath: sidecar.url.path),
+                "删除与在途落盘交错后，qa.json 不得残留或被复活"
+            )
+            precondition(WatchQAStore.load(from: sidecar.url).isEmpty)
+        }
+    }
+
+    /// 与 `QueueStore.remove` 同款前缀扫描：删除媒体目录下全部 `<uuid>.*`（含 qa.json）。
+    private static func prefixScanDelete(itemID: UUID, in folder: URL) {
+        let prefix = itemID.uuidString + "."
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        )) ?? []
+        for file in files where file.lastPathComponent.hasPrefix(prefix) {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     private static func checkPersistOutcomes() async {
