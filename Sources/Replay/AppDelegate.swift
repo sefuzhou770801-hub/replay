@@ -53,7 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 keyCode: event.keyCode,
                 character: event.charactersIgnoringModifiers,
                 modifiers: event.modifierFlags,
-                hasActivePlayer: PlaybackCommandCenter.shared.hasActivePlayer
+                hasActivePlayer: PlaybackCommandCenter.shared.hasActivePlayer,
+                askQuestionEnabled: WatchQAAvailability.isEnabled()
             )
 
             switch decision {

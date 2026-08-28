@@ -8,6 +8,7 @@ struct KeyboardRoutingCheck {
 
         assertEditingDetection()
         assertIdlePlaybackShortcuts()
+        assertAskQuestionRespectsAvailability()
         assertEditingPassesText()
         assertEditingSpaceIsPassedThrough()
         assertModifierSpaceIsPassedThrough()
@@ -257,6 +258,33 @@ struct KeyboardRoutingCheck {
         precondition(
             route(keyCode: 125, hasActivePlayer: true) == .adjustRate(-0.1),
             "空闲时下方向键必须减慢播放速度"
+        )
+    }
+
+    private static func assertAskQuestionRespectsAvailability() {
+        precondition(
+            route(character: "a", keyCode: 0, hasActivePlayer: true, askQuestionEnabled: false)
+                == .passThrough,
+            "开关关闭时 a 必须原样放行"
+        )
+        precondition(
+            route(character: "A", keyCode: 0, hasActivePlayer: true, askQuestionEnabled: false)
+                == .passThrough,
+            "开关关闭时大写 A 必须原样放行"
+        )
+        precondition(
+            route(character: "a", keyCode: 0, hasActivePlayer: true, askQuestionEnabled: true)
+                == .askQuestion,
+            "开关打开时 a 必须打开看时问答"
+        )
+        precondition(
+            route(keyCode: 49, hasActivePlayer: true, askQuestionEnabled: false) == .togglePlayback,
+            "开关关闭不得影响空格播放"
+        )
+        precondition(
+            route(character: "f", keyCode: 3, hasActivePlayer: true, askQuestionEnabled: false)
+                == .toggleFullscreen,
+            "开关关闭不得影响全屏快捷键"
         )
     }
 
@@ -594,14 +622,16 @@ struct KeyboardRoutingCheck {
         character: String? = nil,
         keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags = [],
-        hasActivePlayer: Bool
+        hasActivePlayer: Bool,
+        askQuestionEnabled: Bool = true
     ) -> PlaybackKeyboardAction {
         PlaybackKeyboardRouting.action(
             isEditingText: isEditingText,
             keyCode: keyCode,
             character: character,
             modifiers: modifiers,
-            hasActivePlayer: hasActivePlayer
+            hasActivePlayer: hasActivePlayer,
+            askQuestionEnabled: askQuestionEnabled
         )
     }
 }
