@@ -118,7 +118,8 @@ final class WatchQASession: ObservableObject {
 
     private var streamTask: Task<Void, Never>?
 
-    func present() {
+    func present(defaults: UserDefaults = .standard) {
+        guard WatchQAAvailability.isEnabled(defaults: defaults) else { return }
         guard !isPresented else { return }
         isPresented = true
         question = ""

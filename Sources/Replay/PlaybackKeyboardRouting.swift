@@ -27,14 +27,16 @@ enum PlaybackKeyboardRouting {
         keyCode: UInt16,
         character: String?,
         modifiers: NSEvent.ModifierFlags,
-        hasActivePlayer: Bool
+        hasActivePlayer: Bool,
+        askQuestionEnabled: Bool = false
     ) -> PlaybackKeyboardAction {
         action(
             isEditingText: isEditingText(in: window),
             keyCode: keyCode,
             character: character,
             modifiers: modifiers,
-            hasActivePlayer: hasActivePlayer
+            hasActivePlayer: hasActivePlayer,
+            askQuestionEnabled: askQuestionEnabled
         )
     }
 
@@ -43,7 +45,8 @@ enum PlaybackKeyboardRouting {
         keyCode: UInt16,
         character: String?,
         modifiers: NSEvent.ModifierFlags,
-        hasActivePlayer: Bool
+        hasActivePlayer: Bool,
+        askQuestionEnabled: Bool = false
     ) -> PlaybackKeyboardAction {
         let mods = modifiers.intersection(shortcutModifiers)
 
@@ -72,7 +75,7 @@ enum PlaybackKeyboardRouting {
         if keyCode == 49 {
             return .togglePlayback
         }
-        if character?.lowercased() == "a" {
+        if askQuestionEnabled, character?.lowercased() == "a" {
             return .askQuestion
         }
         if character?.lowercased() == "f" {

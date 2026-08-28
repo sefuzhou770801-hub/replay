@@ -24,6 +24,14 @@ enum WatchQAChapter {
     }
 }
 
+enum WatchQAAvailability {
+    static let defaultsKey = "WatchQAEnabled"
+
+    static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: defaultsKey)
+    }
+}
+
 enum WatchQAAPIKey {
     static let defaultsKey = "AnthropicAPIKey"
     static let environmentKey = "ANTHROPIC_API_KEY"

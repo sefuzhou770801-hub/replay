@@ -7,6 +7,7 @@ struct QAContextCheck {
         checkChapterLookup()
         checkRequestJSON()
         checkMissingKeyHint()
+        checkAvailabilityFlag()
         checkSSEParsing()
         print("qa_context_check=passed")
     }
@@ -188,6 +189,34 @@ struct QAContextCheck {
         precondition(!noChapterText.contains("章节："), "无章节时不得输出空章节行")
         precondition(noChapterText.contains("字幕（当前前后 90 秒）："))
         precondition(noChapterText.contains("问题：他刚才说了什么"))
+    }
+
+    private static func checkAvailabilityFlag() {
+        precondition(WatchQAAvailability.defaultsKey == "WatchQAEnabled")
+        let suite = "qa.availability.check.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        precondition(
+            !WatchQAAvailability.isEnabled(defaults: defaults),
+            "未写键时看时问答必须关闭"
+        )
+        defaults.set(false, forKey: WatchQAAvailability.defaultsKey)
+        precondition(
+            !WatchQAAvailability.isEnabled(defaults: defaults),
+            "显式 false 必须关闭"
+        )
+        defaults.set(true, forKey: WatchQAAvailability.defaultsKey)
+        precondition(
+            WatchQAAvailability.isEnabled(defaults: defaults),
+            "显式 true 必须打开"
+        )
+        defaults.removeObject(forKey: WatchQAAvailability.defaultsKey)
+        precondition(
+            !WatchQAAvailability.isEnabled(defaults: defaults),
+            "删除键后必须回到关闭"
+        )
     }
 
     private static func checkMissingKeyHint() {

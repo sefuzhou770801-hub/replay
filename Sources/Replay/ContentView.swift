@@ -975,8 +975,16 @@ private struct VideoDetail: View {
         showsSidePane
     }
 
+    private var isWatchQAEnabled: Bool {
+        WatchQAAvailability.isEnabled()
+    }
+
+    private var visibleQAEntries: [WatchQAEntry] {
+        isWatchQAEnabled ? qaEntries : []
+    }
+
     private var showsSidePane: Bool {
-        item.hasSidePaneContent || !qaEntries.isEmpty
+        item.hasSidePaneContent || !visibleQAEntries.isEmpty
     }
 
     @ViewBuilder
@@ -1109,6 +1117,7 @@ private struct VideoDetail: View {
                             hasSubtitles: subtitleTrack != nil,
                             subtitleMode: subtitleMode,
                             toggleSubtitles: cycleSubtitleMode,
+                            showsAskQuestion: isWatchQAEnabled,
                             askQuestion: { PlaybackCommandCenter.shared.askQuestion() }
                         )
                         .fixedSize(horizontal: false, vertical: true)
@@ -1125,7 +1134,7 @@ private struct VideoDetail: View {
         ChapterSidebar(
             chapters: item.availableChapters,
             subtitleCues: subtitleTrack?.cues ?? [],
-            qaEntries: qaEntries,
+            qaEntries: visibleQAEntries,
             hasSubtitleSource: item.subtitleFileURL != nil || subtitleTrack != nil,
             currentTime: playback.currentTime,
             isPresented: chaptersPresented,
@@ -1174,7 +1183,7 @@ private struct VideoDetail: View {
                 .transition(.opacity)
             }
 
-            if watchQA.isPresented {
+            if isWatchQAEnabled, watchQA.isPresented {
                 WatchQAOverlay(
                     session: watchQA,
                     isQuestionFieldFocused: $isQuestionFieldFocused,
@@ -1506,6 +1515,7 @@ private struct PlaybackControls: View {
     let hasSubtitles: Bool
     let subtitleMode: SubtitleDisplayMode
     let toggleSubtitles: () -> Void
+    let showsAskQuestion: Bool
     let askQuestion: () -> Void
 
     private var subtitleModeHelp: String {
@@ -1593,11 +1603,13 @@ private struct PlaybackControls: View {
                 action: toggleSubtitles
             )
 
-            PlayerControlButton(
-                systemImage: "questionmark.bubble",
-                help: "看时问答（A）",
-                action: askQuestion
-            )
+            if showsAskQuestion {
+                PlayerControlButton(
+                    systemImage: "questionmark.bubble",
+                    help: "看时问答（A）",
+                    action: askQuestion
+                )
+            }
 
             AirPlayRoutePicker()
                 .frame(width: 32, height: 32)

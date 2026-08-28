@@ -61,6 +61,8 @@ final class Recorder: @unchecked Sendable {
 @main
 struct QASessionCheck {
     static func main() async throws {
+        await checkPresentHonorsAvailability()
+
         // 真实流式代码：完成事件识别与累积（注入 mock session，不碰真实网络）。
         try await checkStreamCompletesOnMessageStop()
         try await checkStreamStopsAtMessageStop()
@@ -79,6 +81,24 @@ struct QASessionCheck {
         try await checkCompletedAnswerSurvivesDismiss(video: video)
 
         print("qa_session_check=passed")
+    }
+
+    private static func checkPresentHonorsAvailability() async {
+        await MainActor.run {
+            let suite = "qa.session.availability.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            defer { defaults.removePersistentDomain(forName: suite) }
+
+            let session = WatchQASession()
+            session.present(defaults: defaults)
+            precondition(!session.isPresented, "开关关闭时不得唤起问答浮层")
+
+            defaults.set(true, forKey: WatchQAAvailability.defaultsKey)
+            session.present(defaults: defaults)
+            precondition(session.isPresented, "开关打开时必须能唤起问答浮层")
+            _ = session.dismiss(resume: false)
+        }
     }
 
     // MARK: - 流式（真实 WatchQAClient.stream，注入 mock session）
@@ -214,7 +234,12 @@ struct QASessionCheck {
         let session = await MainActor.run { () -> WatchQASession in
             PlaybackCommandCenter.shared.testPlayer = AVPlayer(url: video)
             let s = WatchQASession()
-            s.present() // isPresented = true，dismiss() 才会真正生效
+            let suite = "qa.session.present.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            defaults.set(true, forKey: WatchQAAvailability.defaultsKey)
+            defer { defaults.removePersistentDomain(forName: suite) }
+            s.present(defaults: defaults) // isPresented = true，dismiss() 才会真正生效
             s.question = "画面里是什么"
             s.submit(
                 item: makeItem(id: sidecar.itemID),
