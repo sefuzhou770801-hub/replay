@@ -23,6 +23,15 @@
   <img src="docs/images/seesee-banner.png" width="720" alt="seesee banner">
 </p>
 
+## The vision: a player that is an agent
+
+seesee is not just trying to be a cleaner player. We believe the next generation of players is agentic: one that understands what you are watching and can talk about it with you.
+
+- **Ask while watching (in private beta)**: press `a` at any moment to pause and ask a question; the answer draws on the current frame and the surrounding subtitles, and every exchange is pinned to the timeline so you can revisit it from the side pane. A chart you cannot parse, a term you did not catch, a claim you want to dig into: ask in place instead of switching away to search.
+- **Coming next**: search across everything you have watched, automatic preview digests for freshly downloaded videos, watching trusted channels for you, skipping sponsor segments.
+
+Learning from video should be a conversation, not a one-way stream.
+
 ## Install
 
 1. Download the zip from the [releases page](https://github.com/sefuzhou770801-hub/seesee/releases/latest) and unzip it.
