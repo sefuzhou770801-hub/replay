@@ -201,7 +201,7 @@ final class QueueStore: ObservableObject {
         lastIntakeError = nil
 
         if addedCount > 0 {
-            let duplicateDetail = existingCount > 0 ? " · \(existingCount) 个已在片库中" : ""
+            let duplicateDetail = existingCount > 0 ? " · \(existingCount) 个已在待播清单中" : ""
             let detail: String
             let systemImage: String
             if powerMonitor.isLowPowerModeEnabled {
@@ -222,7 +222,7 @@ final class QueueStore: ObservableObject {
         } else {
             showIntakeNotice(
                 title: "已在队列中",
-                detail: "粘贴的 \(existingCount) 个链接都已在片库中",
+                detail: "粘贴的 \(existingCount) 个链接都已在待播清单中",
                 systemImage: "checkmark.circle.fill"
             )
         }
