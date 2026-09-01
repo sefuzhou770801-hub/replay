@@ -775,7 +775,7 @@ private struct SidebarEmptyState: View {
                 .font(.system(size: 28, weight: .light))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
-            Text("片库还空着")
+            Text("还没有视频")
                 .font(.subheadline.weight(.semibold))
             Text("粘贴一个链接，存下你要看的视频。")
                 .font(.caption)
