@@ -14,7 +14,7 @@ private final class PlayerSubtitleOverlayView: NSView {
     /// 滚动期间挂在裁剪层上的上下渐隐，滚完即摘。
     private(set) var presentation: VideoSubtitlePresentation?
     private var animationGeneration = 0
-    private var surfaceWidth: CGFloat = 800
+    private var surfaceWidth: CGFloat = 1
     private var bottomConstraint: NSLayoutConstraint?
     private var widthConstraint: NSLayoutConstraint?
 
@@ -63,6 +63,7 @@ private final class PlayerSubtitleOverlayView: NSView {
             ),
             widthAnchor.constraint(lessThanOrEqualToConstant: SubtitleOverlayLayout.maxOverlayWidth)
         ])
+        updateForSurfaceWidth(max(view.bounds.width, 1))
     }
 
     func setControlsVisible(_ visible: Bool) {
@@ -190,7 +191,6 @@ private final class PlayerSubtitleOverlayView: NSView {
             textStack.topAnchor.constraint(equalTo: clipView.topAnchor, constant: 4),
             textStack.bottomAnchor.constraint(equalTo: clipView.bottomAnchor, constant: -4)
         ])
-        updateForSurfaceWidth(800)
     }
 
     private static let rollDuration: TimeInterval = 0.25
@@ -268,9 +268,20 @@ private final class PlayerSubtitleOverlayView: NSView {
         translationPill.isHidden = translationTextField.isHidden
     }
 
+    private func resolvedSurfaceWidth() -> CGFloat {
+        if let hostWidth = superview?.bounds.width, hostWidth > 1 {
+            return hostWidth
+        }
+        if bounds.width > 1 {
+            return bounds.width
+        }
+        return max(surfaceWidth, 1)
+    }
+
     private func applyLayoutDecision() {
         let texts = displayedLines
         guard !texts.isEmpty else { return }
+        surfaceWidth = resolvedSurfaceWidth()
         let decision = SubtitleOverlayLayout.resolve(lines: texts, surfaceWidth: surfaceWidth)
         widthConstraint?.constant = decision.overlayWidth
         let fields = [sourceTextField, translationTextField].filter {
@@ -328,7 +339,13 @@ final class FloatingVideoPlayerView: AVPlayerView {
     }
 
     func setSubtitlePresentation(_ presentation: VideoSubtitlePresentation?, animated: Bool) {
+        subtitleOverlay.updateForSurfaceWidth(bounds.width)
         subtitleOverlay.setPresentation(presentation, animated: animated)
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        subtitleOverlay.updateForSurfaceWidth(newSize.width)
     }
 
     override func updateTrackingAreas() {
@@ -444,12 +461,14 @@ final class PictureInPicturePlayerView: NSView {
     }
 
     func setSubtitlePresentation(_ presentation: VideoSubtitlePresentation?, animated: Bool) {
+        subtitleOverlay.updateForSurfaceWidth(bounds.width)
         subtitleOverlay.setPresentation(presentation, animated: animated)
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updatePlayerLayerFrame()
+        subtitleOverlay.updateForSurfaceWidth(newSize.width)
     }
 
     override func setBoundsSize(_ newSize: NSSize) {
