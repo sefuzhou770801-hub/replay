@@ -36,6 +36,8 @@ enum OpenMyChrome {
     static let radiusMd: CGFloat = 10
     static let radiusLg: CGFloat = 12
     static let radiusXl: CGFloat = 16
+    /// 主窗口各栏顶栏高度。左右分隔线落在这一高度的下沿。
+    static let paneHeaderHeight: CGFloat = 56
 
     static let rowHover = Color(hex: rowHoverHex)
     static let rowSelected = Color(hex: rowSelectedHex)
