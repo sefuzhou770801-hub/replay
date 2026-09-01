@@ -1,6 +1,36 @@
 import AppKit
 import SwiftUI
 
+enum PaneHeaderIconMetrics {
+    static let minHitSize: CGFloat = 24
+    static let spacing: CGFloat = 12
+    static let hoverDelay: TimeInterval = 0
+}
+
+struct PaneHeaderIconLabel: View {
+    let systemImage: String
+    let title: String
+    let expanded: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+            if expanded {
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, expanded ? 8 : 0)
+        .frame(
+            minWidth: PaneHeaderIconMetrics.minHitSize,
+            minHeight: PaneHeaderIconMetrics.minHitSize
+        )
+        .contentShape(Rectangle())
+    }
+}
+
 enum DetailHeaderMetrics {
     static let collapsedLeadingPadding: CGFloat = 154
     static let expandedLeadingPadding: CGFloat = 56
