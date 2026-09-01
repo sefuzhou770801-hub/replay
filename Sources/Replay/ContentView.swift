@@ -891,21 +891,12 @@ private struct PaneHeaderIconButton: View {
     let systemImage: String
     let title: String
     let action: () -> Void
-    @State private var isHovering = false
 
     var body: some View {
         Button(action: action) {
-            PaneHeaderIconLabel(
-                systemImage: systemImage,
-                title: title,
-                expanded: isHovering
-            )
+            PaneHeaderIconLabel(systemImage: systemImage, title: title)
         }
         .watchGlassButton()
-        .onHover { hovering in
-            isHovering = hovering
-        }
-        .animation(nil, value: isHovering)
         .accessibilityLabel(title)
     }
 }
@@ -1062,13 +1053,10 @@ private struct VideoDetail: View {
 
             Spacer(minLength: 12)
 
-            TitlebarInteractiveHost {
-                videoActionButtons
-            }
-            .fixedSize()
+            titlebarActionButtons
 
             if showsSidePane, !chaptersPresented {
-                TitlebarInteractiveHost {
+                TitlebarInteractiveHost(tooltip: "显示侧栏") {
                     PaneHeaderIconButton(
                         systemImage: "sidebar.trailing",
                         title: "显示侧栏",
@@ -1083,43 +1071,53 @@ private struct VideoDetail: View {
         .frame(height: OpenMyChrome.paneHeaderHeight)
     }
 
-    private var videoActionButtons: some View {
-        HStack(spacing: PaneHeaderIconMetrics.spacing) {
-            if usesCompactToolbarActions {
+    @ViewBuilder
+    private var titlebarActionButtons: some View {
+        if usesCompactToolbarActions {
+            TitlebarInteractiveHost(tooltip: "打开原网页") {
                 PaneHeaderIconButton(
                     systemImage: "arrow.up.forward",
                     title: "打开原网页",
                     action: { store.openOriginal(item.id) }
                 )
+            }
+            .fixedSize()
+            TitlebarInteractiveHost(tooltip: item.isWatched ? "移回队列" : "标记已看") {
                 PaneHeaderIconButton(
                     systemImage: item.isWatched ? "arrow.uturn.backward" : "checkmark.circle",
                     title: item.isWatched ? "移回队列" : "标记已看",
                     action: { store.toggleWatched(item.id) }
                 )
-            } else {
-                Button {
-                    store.openOriginal(item.id)
-                } label: {
-                    Label("打开原网页", systemImage: "arrow.up.forward")
+            }
+            .fixedSize()
+        } else {
+            TitlebarInteractiveHost {
+                HStack(spacing: PaneHeaderIconMetrics.spacing) {
+                    Button {
+                        store.openOriginal(item.id)
+                    } label: {
+                        Label("打开原网页", systemImage: "arrow.up.forward")
+                            .frame(minHeight: PaneHeaderIconMetrics.minHitSize)
+                            .contentShape(Rectangle())
+                    }
+                    .watchGlassButton()
+                    .accessibilityLabel("打开原网页")
+
+                    Button {
+                        store.toggleWatched(item.id)
+                    } label: {
+                        Label(
+                            item.isWatched ? "移回队列" : "标记已看",
+                            systemImage: item.isWatched ? "arrow.uturn.backward" : "checkmark.circle"
+                        )
                         .frame(minHeight: PaneHeaderIconMetrics.minHitSize)
                         .contentShape(Rectangle())
+                    }
+                    .watchGlassButton()
+                    .accessibilityLabel(item.isWatched ? "移回队列" : "标记已看")
                 }
-                .watchGlassButton()
-                .accessibilityLabel("打开原网页")
-
-                Button {
-                    store.toggleWatched(item.id)
-                } label: {
-                    Label(
-                        item.isWatched ? "移回队列" : "标记已看",
-                        systemImage: item.isWatched ? "arrow.uturn.backward" : "checkmark.circle"
-                    )
-                    .frame(minHeight: PaneHeaderIconMetrics.minHitSize)
-                    .contentShape(Rectangle())
-                }
-                .watchGlassButton()
-                .accessibilityLabel(item.isWatched ? "移回队列" : "标记已看")
             }
+            .fixedSize()
         }
     }
 
@@ -2177,7 +2175,7 @@ private struct ChapterSidebar: View {
             Spacer(minLength: 8)
 
             if isPresented {
-                TitlebarInteractiveHost {
+                TitlebarInteractiveHost(tooltip: "隐藏侧栏") {
                     PaneHeaderIconButton(
                         systemImage: "sidebar.trailing",
                         title: "隐藏侧栏",
