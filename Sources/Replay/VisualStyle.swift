@@ -592,7 +592,7 @@ struct TitlebarInteractiveHost<Content: View>: NSViewRepresentable {
             // for marker safe areas or NSThemeFrame bounds, both of which can
             // change across window states. Horizontal placement remains
             // entirely marker-driven.
-            let titleRowHeight: CGFloat = 56
+            let titleRowHeight = OpenMyChrome.paneHeaderHeight
             let verticalInset = (titleRowHeight - markerFrame.height) / 2
             let controlBottomOnScreen = window.frame.maxY - verticalInset - markerFrame.height
             let controlBottomInWindow = window.convertPoint(

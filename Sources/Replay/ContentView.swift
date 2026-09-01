@@ -1057,7 +1057,7 @@ private struct VideoDetail: View {
         }
         .padding(.leading, DetailHeaderMetrics.leadingPadding(sidebarCollapsed: sidebarCollapsed))
         .padding(.trailing, 14)
-        .frame(height: 56)
+        .frame(height: OpenMyChrome.paneHeaderHeight)
     }
 
     private var videoActionButtons: some View {
@@ -2158,7 +2158,7 @@ private struct ChapterSidebar: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 56)
+        .frame(height: OpenMyChrome.paneHeaderHeight)
     }
 
     private var modeToggle: some View {
