@@ -429,10 +429,31 @@ final class WindowWidthTrackingView: NSView {
 /// an invisible marker, then constrains the interactive content directly to
 /// that marker above the toolbar so it follows pane and window layout changes.
 private final class TitlebarHostingView<Content: View>: NSHostingView<Content> {
+    var onFittingSizeChange: (() -> Void)?
+    private var reportedFittingSize: NSSize = .zero
+
     // NSThemeFrame advertises the native title-bar safe area to descendants.
     // This detached overlay already lives inside that area, so inheriting it
     // would add 52 points to its fitting height and clip the real controls.
     override var safeAreaInsets: NSEdgeInsets { NSEdgeInsets() }
+
+    override func layout() {
+        super.layout()
+        notifyIfFittingSizeChanged()
+    }
+
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        notifyIfFittingSizeChanged()
+    }
+
+    private func notifyIfFittingSizeChanged() {
+        let size = fittingSize
+        guard size.width > 0, size.height > 0 else { return }
+        guard size != reportedFittingSize else { return }
+        reportedFittingSize = size
+        onFittingSizeChange?()
+    }
 }
 
 struct TitlebarInteractiveHost<Content: View>: NSViewRepresentable {
@@ -474,6 +495,12 @@ struct TitlebarInteractiveHost<Content: View>: NSViewRepresentable {
             hostingView = TitlebarHostingView(rootView: Self.hosted(content))
             hostingView.wantsLayer = true
             hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+            hostingView.layer?.masksToBounds = false
+            hostingView.clipsToBounds = false
+            hostingView.setAccessibilityIdentifier("titlebar-interactive-overlay")
+            hostingView.onFittingSizeChange = { [weak self] in
+                self?.updateOverlayFrame()
+            }
         }
 
         func attach(to marker: TitlebarInteractiveMarkerView) {

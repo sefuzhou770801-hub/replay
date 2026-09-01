@@ -134,6 +134,122 @@ struct ActivationClickCheck {
         )
 
         window.close()
+        assertTitlebarHostResizesWithHoverLabel()
+    }
+
+    @MainActor
+    private static func assertTitlebarHostResizesWithHoverLabel() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 240),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.insert(.fullSizeContentView)
+
+        let root = HStack {
+            Spacer()
+            TitlebarInteractiveHost {
+                hostedIconButton(expanded: false)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: OpenMyChrome.paneHeaderHeight, maxHeight: OpenMyChrome.paneHeaderHeight)
+
+        let contentHost = NSHostingView(rootView: root)
+        window.contentView = contentHost
+        window.makeKeyAndOrderFront(nil)
+        pump(window, contentHost)
+
+        guard let overlay = titlebarOverlay(in: window) else {
+            preconditionFailure("标题栏必须装上 TitlebarHostingView 叠加层")
+        }
+        let collapsedFrameWidth = overlay.frame.width
+        precondition(
+            collapsedFrameWidth >= PaneHeaderIconMetrics.minHitSize,
+            "叠加层收起宽度必须 ≥24，实际 \(overlay.frame)"
+        )
+        precondition(
+            abs(overlay.frame.width - overlay.fittingSize.width) < 1,
+            "收起时叠加层 frame 必须跟上 fittingSize，frame=\(overlay.frame.size) fitting=\(overlay.fittingSize)"
+        )
+
+        guard let hosting = overlay as? NSHostingView<AnyView> else {
+            preconditionFailure("叠加层必须是 NSHostingView<AnyView>，实际 \(overlay.className)")
+        }
+        hosting.rootView = AnyView(hostedIconButton(expanded: true).fixedSize())
+        hosting.invalidateIntrinsicContentSize()
+        hosting.layoutSubtreeIfNeeded()
+        pump(window, contentHost)
+
+        precondition(
+            hosting.fittingSize.width > collapsedFrameWidth + 40,
+            "展开后 fittingSize 必须变宽，fitting=\(hosting.fittingSize.width) 收起 \(collapsedFrameWidth)"
+        )
+        precondition(
+            hosting.frame.width >= hosting.fittingSize.width - 1,
+            "悬停展开后宿主 frame 必须跟上 fittingSize，否则中文说明被 24×24 裁切。frame=\(hosting.frame.size) fitting=\(hosting.fittingSize)"
+        )
+        precondition(
+            hosting.frame.width > collapsedFrameWidth + 40,
+            "展开后叠加层宽度必须明显大于收起态，实际 \(hosting.frame.width)"
+        )
+
+        hosting.rootView = AnyView(hostedIconButton(expanded: false).fixedSize())
+        hosting.invalidateIntrinsicContentSize()
+        hosting.layoutSubtreeIfNeeded()
+        pump(window, contentHost)
+
+        precondition(
+            abs(hosting.frame.width - collapsedFrameWidth) < 1,
+            "移开后叠加层宽度必须恢复，实际 \(hosting.frame.width) 期望 \(collapsedFrameWidth)"
+        )
+
+        window.close()
+    }
+
+    private static func hostedIconButton(expanded: Bool) -> some View {
+        Button(action: {}) {
+            PaneHeaderIconLabel(
+                systemImage: "arrow.up.forward",
+                title: "打开原网页",
+                expanded: expanded
+            )
+        }
+        .watchGlassButton()
+        .accessibilityLabel("打开原网页")
+    }
+
+    private static func titlebarOverlay(in window: NSWindow) -> NSView? {
+        guard let frameView = window.contentView?.superview else { return nil }
+        if let match = firstView(in: frameView, where: {
+            $0.accessibilityIdentifier() == "titlebar-interactive-overlay"
+        }) {
+            return match
+        }
+        return firstView(in: frameView, where: {
+            $0 !== window.contentView && $0 is NSHostingView<AnyView>
+        })
+    }
+
+    private static func firstView(in view: NSView, where match: (NSView) -> Bool) -> NSView? {
+        if match(view) { return view }
+        for child in view.subviews {
+            if let found = firstView(in: child, where: match) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private static func pump(_ window: NSWindow, _ host: NSView) {
+        for _ in 0..<14 {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+            window.layoutIfNeeded()
+            host.layoutSubtreeIfNeeded()
+        }
     }
 
     private static func click(_ window: NSWindow, in view: NSView, at local: NSPoint) {
