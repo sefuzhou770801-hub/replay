@@ -117,13 +117,18 @@ struct DigestNotesCheck {
 
     private static func checkCorruptAndMissing() {
         let missing = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID().uuidString).notes.json")
+        precondition(DigestNotesStore.read(from: missing) == .missing)
         precondition(DigestNotesStore.load(from: missing).isEmpty)
 
         let folder = FileManager.default.temporaryDirectory
         let corrupt = folder.appendingPathComponent("digest-notes-corrupt-\(UUID().uuidString).json")
         try? "not-json".write(to: corrupt, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: corrupt) }
-        precondition(DigestNotesStore.load(from: corrupt).isEmpty, "坏 JSON 按空列表")
+        precondition(DigestNotesStore.read(from: corrupt) == .corrupt, "损坏文件必须标为 corrupt")
+        let before = try? String(contentsOf: corrupt, encoding: .utf8)
+        _ = DigestNotesStore.load(from: corrupt)
+        let after = try? String(contentsOf: corrupt, encoding: .utf8)
+        precondition(before == after, "读取损坏文件不得覆盖原件")
     }
 
     private static func checkCaptureWholeBlock() {

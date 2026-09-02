@@ -74,6 +74,12 @@ enum DigestHighlight {
 enum DigestNotesStore {
     static let sidecarSuffix = "notes.json"
 
+    enum Read: Equatable {
+        case missing
+        case ready([DigestNote])
+        case corrupt
+    }
+
     static func fileURL(itemID: UUID, in folder: URL) -> URL {
         folder.appendingPathComponent("\(itemID.uuidString).\(sidecarSuffix)")
     }
@@ -83,10 +89,34 @@ enum DigestNotesStore {
     }
 
     static func load(from url: URL) -> [DigestNote] {
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return [] }
+        switch read(from: url) {
+        case .ready(let notes):
+            return notes
+        case .missing, .corrupt:
+            return []
+        }
+    }
+
+    static func read(itemID: UUID, folder: URL) -> Read {
+        read(from: fileURL(itemID: itemID, in: folder))
+    }
+
+    static func read(from url: URL) -> Read {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            return .corrupt
+        }
+        if data.isEmpty { return .missing }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([DigestNote].self, from: data)) ?? []
+        do {
+            return .ready(try decoder.decode([DigestNote].self, from: data))
+        } catch {
+            return .corrupt
+        }
     }
 
     static func save(_ notes: [DigestNote], itemID: UUID, folder: URL) throws {

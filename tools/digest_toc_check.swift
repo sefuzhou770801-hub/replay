@@ -26,9 +26,70 @@ struct DigestTOCCheck {
         precondition(
             DigestTOCCopy.sourceNote(.generated) == "章节与概括由 AI 生成"
         )
-        precondition(DigestTOCCopy.missingKeyHint.contains("密钥"))
-        precondition(DigestTOCCopy.missingKeyHint.contains("AnthropicAPIKey"))
-        precondition(DigestTOCCopy.missingKeyHint.contains("GeminiAPIKey"))
+        precondition(DigestTOCCopy.missingKeyHint == DigestCopy.missingKeyHint)
+        precondition(!DigestTOCCopy.missingKeyHint.contains("defaults"))
+        precondition(!DigestTOCCopy.missingKeyHint.contains("AnthropicAPIKey"))
+        checkCompleteness()
+    }
+
+    private static func checkCompleteness() {
+        let cues = [
+            VideoSubtitleCue(startTime: 15, endTime: 18, text: "We wanted to think outside the box\n我们想跳出框框来想"),
+            VideoSubtitleCue(startTime: 180, endTime: 184, text: "Always measure twice"),
+            VideoSubtitleCue(startTime: 320, endTime: 324, text: "That is the conclusion")
+        ]
+        let quote0 = DigestKeyQuote(
+            quote: "We wanted to think outside the box",
+            translation: "我们想跳出框框来想",
+            timestamp: "0:15",
+            timestampSeconds: 15
+        )
+        let quote1 = DigestKeyQuote(
+            quote: "Always measure twice",
+            translation: "始终量两次",
+            timestamp: "3:00",
+            timestampSeconds: 180
+        )
+        let quote2 = DigestKeyQuote(
+            quote: "That is the conclusion",
+            translation: "这就是结论",
+            timestamp: "5:20",
+            timestampSeconds: 320
+        )
+        let complete = DigestOverviewPayload(
+            chapters: [
+                DigestGeneratedChapter(title: "开场", timestamp: "0:00", timestampSeconds: 0, summary: "介绍问题", quote: quote0),
+                DigestGeneratedChapter(title: "方法", timestamp: "2:00", timestampSeconds: 120, summary: "讲做法", quote: quote1),
+                DigestGeneratedChapter(title: "结论", timestamp: "5:00", timestampSeconds: 300, summary: "收束观点", quote: quote2)
+            ],
+            keyQuotes: [],
+            source: .generated,
+            durationSeconds: 400
+        )
+        precondition(
+            DigestTOCCompleteness.isComplete(complete, cues: cues, duration: 400),
+            "末章覆盖后段、每章有概括与对得上的金句时必须完整"
+        )
+        var missingQuote = complete
+        missingQuote.chapters[1].quote = nil
+        precondition(!DigestTOCCompleteness.isComplete(missingQuote, cues: cues, duration: 400))
+        var missingSummary = complete
+        missingSummary.chapters[0].summary = "  "
+        precondition(!DigestTOCCompleteness.isComplete(missingSummary, cues: cues, duration: 400))
+        var earlyLast = complete
+        earlyLast.chapters[2].timestampSeconds = 100
+        precondition(
+            !DigestTOCCompleteness.isComplete(earlyLast, cues: cues, duration: 400),
+            "末章未覆盖后段不得算完整"
+        )
+        var invented = complete
+        invented.chapters[1].quote = DigestKeyQuote(
+            quote: "this quote is not in the transcript",
+            translation: "捏造",
+            timestamp: "3:00",
+            timestampSeconds: 180
+        )
+        precondition(!DigestTOCCompleteness.isComplete(invented, cues: cues, duration: 400))
     }
 
     /// 有自带章节：目录章节数与自带章节一致，标题与时间码来自骨架，每章一句概括。

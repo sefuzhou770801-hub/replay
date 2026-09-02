@@ -34,20 +34,32 @@ struct DigestCueRow: View {
     var onSeek: () -> Void = {}
     var onExplain: () -> Void = {}
     var onHighlight: () -> Void = {}
+    var stacksActions = false
 
     var body: some View {
-        Group {
-            if showsActions {
-                ViewThatFits(in: .horizontal) {
-                    inlineRow(showsTrailingActions: true)
-                        .fixedSize(horizontal: true, vertical: false)
-                    stackedRow
-                }
-            } else {
-                inlineRow(showsTrailingActions: false)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                timeButton
+                cueTextBlock
+                    .padding(.trailing, showsActions && !stacksActions ? DigestBookChrome.actionReserveWidth : 0)
+            }
+            if showsActions && stacksActions {
+                DigestCueActionButtons(
+                    onExplain: onExplain,
+                    onHighlight: onHighlight
+                )
+                .padding(.leading, timeColumnWidth + 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topTrailing) {
+            if showsActions && !stacksActions {
+                DigestCueActionButtons(
+                    onExplain: onExplain,
+                    onHighlight: onHighlight
+                )
+            }
+        }
         .overlay(alignment: .leading) {
             if isHighlighted {
                 RoundedRectangle(cornerRadius: 1, style: .continuous)
@@ -55,31 +67,6 @@ struct DigestCueRow: View {
                     .frame(width: DigestBookChrome.highlightMarkWidth)
                     .padding(.vertical, 2)
             }
-        }
-    }
-
-    private func inlineRow(showsTrailingActions: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            timeButton
-            cueTextBlock
-            if showsTrailingActions {
-                DigestCueActionButtons(
-                    onExplain: onExplain,
-                    onHighlight: onHighlight
-                )
-                .fixedSize(horizontal: true, vertical: false)
-            }
-        }
-    }
-
-    private var stackedRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            inlineRow(showsTrailingActions: false)
-            DigestCueActionButtons(
-                onExplain: onExplain,
-                onHighlight: onHighlight
-            )
-            .padding(.leading, timeColumnWidth + 10)
         }
     }
 
@@ -108,6 +95,14 @@ struct DigestCueRow: View {
         .alignmentGuide(.firstTextBaseline) { dimensions in
             dimensions[.top] + DigestCueDisplay.firstLineBaselineFromTop
         }
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: DigestBookHitKey.self,
+                    value: ["cue-text": proxy.frame(in: .named("digest-book-page"))]
+                )
+            }
+        )
     }
 }
 

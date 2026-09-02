@@ -43,26 +43,6 @@ struct DigestAnnotationCard: View {
     }
 
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            headerRow
-            VStack(alignment: .leading, spacing: 4) {
-                if showsContinueAsk {
-                    headerButton(
-                        title: DigestContinueAsk.title,
-                        action: onContinueAsk,
-                        hitKey: "continue-ask"
-                    )
-                }
-                HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    toggleButton
-                    deleteButton
-                }
-            }
-        }
-    }
-
-    private var headerRow: some View {
         HStack(spacing: 4) {
             if showsContinueAsk {
                 headerButton(
@@ -75,7 +55,6 @@ struct DigestAnnotationCard: View {
             toggleButton
             deleteButton
         }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var toggleButton: some View {

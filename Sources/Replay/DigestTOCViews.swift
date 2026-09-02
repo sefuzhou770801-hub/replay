@@ -22,7 +22,13 @@ struct DigestTOCBanner: View {
                     expandedBody(toc)
                 }
             } else if let message, !message.isEmpty {
-                failureRow(message)
+                if message == DigestCopy.missingKeyHint {
+                    DigestMissingKeyHint()
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                } else {
+                    failureRow(message)
+                }
             } else {
                 DigestTOCPlaceholder(action: onGenerate)
             }

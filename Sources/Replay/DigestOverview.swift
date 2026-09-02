@@ -240,8 +240,8 @@ enum DigestOverviewPrompt {
         if skeletonBlock.isEmpty {
             chapterRule = """
             You must provide:
-            - Chapters with timestamps that COVER THE ENTIRE VIDEO from start to finish. This video runs until \(durationFormatted). Use your own judgment for how many chapters there should be and where the natural topic shifts happen — make as many or as few as the content genuinely calls for. The only hard rule is COVERAGE: the chapters must span the whole timeline, and your LAST chapter MUST come after \(late). Do NOT stop partway through or cluster all the chapters near the beginning — the later parts of the video need chapters too.
-            - For each chapter: one-sentence summary in Simplified Chinese, and at most one key quote from that chapter's transcript.
+            - Chapters with timestamps that COVER THE ENTIRE VIDEO from start to finish. This video runs until \(durationFormatted). Use your own judgment for how many chapters there should be and where the natural topic shifts happen. Make as many or as few as the content genuinely calls for. The only hard rule is COVERAGE: the chapters must span the whole timeline, and your LAST chapter MUST come after \(late). Do NOT stop partway through or cluster all the chapters near the beginning. The later parts of the video need chapters too.
+            - For each chapter: one-sentence summary in Simplified Chinese, and exactly one key quote from that chapter's transcript.
             """
         } else {
             chapterRule = """
@@ -249,7 +249,7 @@ enum DigestOverviewPrompt {
 
             For each given chapter:
             - summary: one Simplified Chinese sentence
-            - at most one key quote from that chapter's transcript (omit if none is genuinely quotable)
+            - exactly one key quote from that chapter's transcript
 
             \(skeletonBlock)
             """
@@ -292,7 +292,7 @@ enum DigestOverviewPrompt {
 
         DO NOT:
         - Make up timestamps that don't exist in the transcript
-        - Use 0:00 as a default — find the actual timestamp
+        - Use 0:00 as a default. Find the actual timestamp
         - Use timestamps > \(durationFormatted) (video is only \(maxTimestampSeconds) seconds)
 
         For CHAPTERS: Find where a topic begins, use that line's timestamp
@@ -311,8 +311,8 @@ enum DigestOverviewPrompt {
         - timestamp: The [M:SS] from the transcript line (e.g., "2:30")
         - timestampSeconds: Convert to seconds (2:30 = 2*60+30 = 150)
         - NEVER use 0:00/0 unless the content actually starts at [0:00]
-        - EVERY timestamp must exist in the transcript — look it up!
-        - 每章至多一条金句。没有合适的金句就省略 quote。
+        - EVERY timestamp must exist in the transcript. Look it up!
+        - 每章必须有一句概括和一条金句。
         """
     }
 
@@ -331,7 +331,7 @@ enum DigestOverviewPrompt {
         return """
         Video title: \(title)
         Channel: \(author)
-        VIDEO DURATION: \(durationFormatted) (\(maxTimestampSeconds) seconds) — do not use any timestamp beyond this!
+        VIDEO DURATION: \(durationFormatted) (\(maxTimestampSeconds) seconds). Do not use any timestamp beyond this!
 
         \(skeletonNote)
 
@@ -389,18 +389,45 @@ enum DigestOverviewStore {
         FileManager.default.fileExists(atPath: fileURL(itemID: itemID, in: folder).path)
     }
 
+    enum Read: Equatable {
+        case missing
+        case ready(DigestOverviewRecord)
+        case stale
+        case corrupt
+    }
+
     static func load(itemID: UUID, folder: URL) -> DigestOverviewRecord? {
         load(from: fileURL(itemID: itemID, in: folder))
     }
 
     static func load(from url: URL) -> DigestOverviewRecord? {
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
+        if case .ready(let record) = read(from: url) {
+            return record
+        }
+        return nil
+    }
+
+    static func read(itemID: UUID, folder: URL) -> Read {
+        read(from: fileURL(itemID: itemID, in: folder))
+    }
+
+    static func read(from url: URL) -> Read {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            return .corrupt
+        }
+        if data.isEmpty { return .missing }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let record = try? decoder.decode(DigestOverviewRecord.self, from: data),
-              record.isCurrent
-        else { return nil }
-        return record
+        do {
+            let record = try decoder.decode(DigestOverviewRecord.self, from: data)
+            return record.isCurrent ? .ready(record) : .stale
+        } catch {
+            return .corrupt
+        }
     }
 
     static func save(_ record: DigestOverviewRecord, itemID: UUID, folder: URL) throws {

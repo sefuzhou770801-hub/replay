@@ -70,13 +70,14 @@ struct DigestAPICheck {
         precondition(DigestRequestBuilder.text(fromResponse: empty) == nil)
 
         let errorData = Data(#"{"error":{"message":"invalid x-api-key"}}"#.utf8)
-        precondition(DigestRequestBuilder.errorMessage(status: 401, data: errorData) == "invalid x-api-key")
+        precondition(DigestRequestBuilder.errorMessage(status: 401, data: errorData) == DigestCopy.requestFailed)
     }
 
     private static func checkMissingKeyHint() {
         precondition(DigestRequestBuilder.missingKeyHint == DigestCopy.missingKeyHint)
         precondition(DigestRequestBuilder.missingKeyHint.contains("密钥"))
-        precondition(DigestRequestBuilder.missingKeyHint.contains("AnthropicAPIKey"))
+        precondition(!DigestRequestBuilder.missingKeyHint.contains("defaults"))
+        precondition(!DigestRequestBuilder.missingKeyHint.contains("AnthropicAPIKey"))
         let empty = UserDefaults(suiteName: "digest-api-empty-\(UUID().uuidString)")!
         precondition(WatchQAAPIKey.resolve(defaults: empty, environment: [:]) == nil)
         precondition(DigestGeminiAPIKey.resolve(defaults: empty, environment: [:]) == nil)
@@ -174,10 +175,10 @@ struct DigestAPICheck {
         let temp = (tempConfig?["temperature"] as? NSNumber)?.doubleValue
         precondition(temp == 0.2, "解释请求须带低温度，实际 \(String(describing: temp))")
         precondition(DigestGeminiRequestBuilder.model == "gemini-3.7-flash")
-        let url = DigestGeminiRequestBuilder.requestURL(apiKey: "abc/def")
+        let url = DigestGeminiRequestBuilder.requestURL()
         precondition(url.absoluteString.contains("generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent"))
-        precondition(url.absoluteString.contains("key="))
-        precondition(url.absoluteString.contains("abc") && url.absoluteString.contains("def"))
+        precondition(!url.absoluteString.contains("key="))
+        precondition(DigestGeminiRequestBuilder.apiKeyHeader == "x-goog-api-key")
         precondition(DigestProviderKind.gemini.activeModel == "gemini-3.7-flash")
         precondition(DigestProviderKind.anthropic.activeModel == WatchQARequestBuilder.model)
     }
@@ -195,6 +196,6 @@ struct DigestAPICheck {
         precondition(DigestGeminiRequestBuilder.text(fromResponse: blocked) == nil)
 
         let errorData = Data(#"{"error":{"message":"API key not valid","code":400}}"#.utf8)
-        precondition(DigestRequestBuilder.errorMessage(status: 400, data: errorData) == "API key not valid")
+        precondition(DigestRequestBuilder.errorMessage(status: 400, data: errorData) == DigestCopy.requestFailed)
     }
 }

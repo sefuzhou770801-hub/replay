@@ -24,6 +24,36 @@ enum DigestTOCCopy {
     }
 }
 
+enum DigestTOCCompleteness {
+    static func isComplete(
+        _ payload: DigestOverviewPayload,
+        cues: [VideoSubtitleCue],
+        duration: Double
+    ) -> Bool {
+        guard !payload.chapters.isEmpty else { return false }
+        guard DigestOverviewPrompt.lastChapterCoversLatePart(
+            chapters: payload.chapters,
+            duration: duration
+        ) else { return false }
+        let sorted = payload.chapters.sorted { $0.timestampSeconds < $1.timestampSeconds }
+        for (index, chapter) in sorted.enumerated() {
+            if chapter.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return false
+            }
+            guard let quote = chapter.quote else { return false }
+            let end = index + 1 < sorted.count ? sorted[index + 1].timestampSeconds : Double.infinity
+            if !DigestTOCComposer.quoteMatchesChapter(
+                quote,
+                range: chapter.timestampSeconds..<end,
+                cues: cues
+            ) {
+                return false
+            }
+        }
+        return true
+    }
+}
+
 enum DigestTOCComposer {
     static func skeletonBlock(from chapters: [VideoChapter]) -> String {
         let sorted = chapters.sorted { $0.startTime < $1.startTime }
@@ -197,6 +227,14 @@ enum DigestTOCComposer {
             }
         }
         return nil
+    }
+
+    static func quoteMatchesChapter(
+        _ quote: DigestKeyQuote,
+        range: Range<Double>,
+        cues: [VideoSubtitleCue]
+    ) -> Bool {
+        snapQuoteToCue(quote, range: range, cues: cues) != nil
     }
 
     private static func snapQuoteToCue(

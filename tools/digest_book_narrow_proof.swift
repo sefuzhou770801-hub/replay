@@ -23,6 +23,21 @@ struct DigestBookNarrowProof {
         assertButton(hover, "highlight-action", state: "悬停")
         assertInside(hover, keys: ["highlight", "toc", "explain", "highlight-action"], state: "悬停")
         assertNoOverlap(hover, keys: ["highlight", "toc", "explain", "highlight-action"], state: "悬停")
+        if let text = hover["cue-text"], let explain = hover["explain"] {
+            precondition(text.width > 100, "最窄栏正文须保持整行宽，实际 \(text.width)")
+            precondition(explain.minY + 1 >= text.maxY - 8, "232 点悬停按钮须落到句子下一行")
+        }
+
+        let overlay = render(
+            .hover,
+            path: "/tmp/digest-book-hover-overlay.png",
+            canvasWidth: 360
+        )
+        assertButton(overlay, "explain", state: "正常宽度悬停")
+        if let text = overlay["cue-text"], let explain = overlay["explain"] {
+            precondition(text.width > 140, "正常宽度悬停正文不得被压成窄列，实际 \(text.width)")
+            precondition(explain.minY <= text.minY + 28, "正常宽度按钮须浮在句行右上")
+        }
 
         let annotated = render(.annotated, path: "/tmp/digest-book-narrow-annotated.png")
         precondition(annotated["annotation-body"] != nil, "批注态须露出正文")
@@ -66,17 +81,29 @@ struct DigestBookNarrowProof {
         assertInside(tocExpanded, keys: Array(tocKeys), state: "目录展开")
         assertNoOverlap(tocExpanded, keys: ["highlight", "toc"], state: "目录展开")
 
-        print("digest_book_narrow_proof first=/tmp/digest-book-narrow-first-open.png hover=/tmp/digest-book-narrow-hover.png annotated=/tmp/digest-book-narrow-annotated.png highlighted=/tmp/digest-book-narrow-highlighted.png filter=/tmp/digest-book-narrow-highlights-only.png explaining=/tmp/digest-book-narrow-explaining.png toc=/tmp/digest-book-narrow-toc-expanded.png")
+        let missing = render(.missingKey, path: "/tmp/digest-missing-key.png", canvasWidth: 360)
+        precondition(missing["missing-key"] != nil, "无密钥提示须可见")
+        precondition(missing["view-config"] != nil, "须有查看配置方法按钮")
+        assertButton(missing, "view-config", state: "无密钥")
+
+        let undo = render(.undoBar, path: "/tmp/digest-annotation-undo.png", canvasWidth: 360)
+        precondition(undo["undo"] != nil, "批注删除撤回条须可见")
+
+        print("digest_book_narrow_proof first=/tmp/digest-book-narrow-first-open.png hover=/tmp/digest-book-narrow-hover.png overlay=/tmp/digest-book-hover-overlay.png annotated=/tmp/digest-book-narrow-annotated.png highlighted=/tmp/digest-book-narrow-highlighted.png filter=/tmp/digest-book-narrow-highlights-only.png explaining=/tmp/digest-book-narrow-explaining.png toc=/tmp/digest-book-narrow-toc-expanded.png missingKey=/tmp/digest-missing-key.png undo=/tmp/digest-annotation-undo.png")
         print("digest_book_narrow_proof=passed")
     }
 
     @MainActor
-    private static func render(_ state: BookState, path: String) -> [String: CGRect] {
+    private static func render(
+        _ state: BookState,
+        path: String,
+        canvasWidth: Int = DigestBookNarrowProof.width
+    ) -> [String: CGRect] {
         let sink = NarrowHitSink()
-        let root = DigestNarrowBookView(state: state, sink: sink)
+        let root = DigestNarrowBookView(state: state, canvasWidth: canvasWidth, sink: sink)
         let hosting = NSHostingView(rootView: root)
         hosting.appearance = NSAppearance(named: .darkAqua)
-        let size = CGSize(width: width, height: height)
+        let size = CGSize(width: canvasWidth, height: height)
         hosting.frame = NSRect(origin: .zero, size: size)
         let window = OneXWindow(
             contentRect: hosting.frame,
@@ -101,7 +128,7 @@ struct DigestBookNarrowProof {
         let bounds = NSRect(origin: .zero, size: size)
         let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: width,
+            pixelsWide: canvasWidth,
             pixelsHigh: height,
             bitsPerSample: 8,
             samplesPerPixel: 4,
@@ -176,6 +203,8 @@ enum BookState {
     case highlightsOnly
     case explaining
     case tocExpanded
+    case missingKey
+    case undoBar
 }
 
 final class NarrowHitSink {
@@ -184,10 +213,20 @@ final class NarrowHitSink {
 
 private struct DigestNarrowBookView: View {
     let state: BookState
+    let canvasWidth: Int
     let sink: NarrowHitSink
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if state == .missingKey {
+                DigestMissingKeyHint()
+                    .padding(12)
+                Spacer(minLength: 0)
+            } else if state == .undoBar {
+                Spacer(minLength: 0)
+                DigestNoteUndoBar(onUndo: {})
+                    .padding(16)
+            } else {
             DigestBookToolbar(
                 query: "",
                 onQueryChange: { _ in },
@@ -241,8 +280,9 @@ private struct DigestNarrowBookView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)
             }
+            }
         }
-        .frame(width: CGFloat(DigestBookNarrowProof.width), height: CGFloat(DigestBookNarrowProof.height), alignment: .top)
+        .frame(width: CGFloat(canvasWidth), height: CGFloat(DigestBookNarrowProof.height), alignment: .top)
         .background(OpenMyChrome.canvas)
         .coordinateSpace(name: "digest-book-page")
         .onPreferenceChange(DigestBookHitKey.self) { sink.hits = $0 }
@@ -255,7 +295,9 @@ private struct DigestNarrowBookView: View {
                 cueText: "Hello world.\n大家好。",
                 timeColumnWidth: 52,
                 isHighlighted: state == .highlighted || state == .highlightsOnly,
-                showsActions: state == .hover
+                showsActions: state == .hover,
+                onSeek: {},
+                stacksActions: canvasWidth <= Int(DigestBookChrome.minColumnWidth)
             )
             if state == .annotated {
                 DigestAnnotationCard(

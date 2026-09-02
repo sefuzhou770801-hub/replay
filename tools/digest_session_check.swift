@@ -8,6 +8,9 @@ struct DigestSessionCheck {
         try await MainActor.run {
             try checkSwitchThreeVideosIsolated()
             checkMissingKeyHints()
+            try checkAnnotationDeferredDelete()
+            try checkSaveFailureReverts()
+            try checkCorruptLoadDoesNotOverwrite()
         }
         try await checkExplainProgressVisibleWithDelay()
         print("digest_session_check=passed")
@@ -28,6 +31,11 @@ struct DigestSessionCheck {
         let banned = ["验收", "任务书", "实现者", "ticket", "spec"]
         let phrases = [
             DigestCopy.missingKeyHint,
+            DigestCopy.viewConfigTitle,
+            DigestCopy.requestFailed,
+            DigestCopy.saveFailed,
+            DigestCopy.fileCorrupt,
+            DigestCopy.tocIncomplete,
             DigestCopy.noSubtitles,
             DigestCopy.writeFailed,
             DigestCopy.emptyTitle,
@@ -47,8 +55,10 @@ struct DigestSessionCheck {
         precondition(DigestRequestBuilder.missingKeyHint == DigestCopy.missingKeyHint)
         precondition(DigestTOCCopy.missingKeyHint == DigestCopy.missingKeyHint)
         precondition(DigestCopy.missingKeyHint.contains("密钥"))
-        precondition(DigestCopy.missingKeyHint.contains("AnthropicAPIKey"))
-        precondition(DigestCopy.missingKeyHint.contains("GeminiAPIKey"))
+        precondition(!DigestCopy.missingKeyHint.contains("defaults"))
+        precondition(!DigestCopy.missingKeyHint.contains("AnthropicAPIKey"))
+        precondition(!DigestCopy.missingKeyHint.contains("GeminiAPIKey"))
+        precondition(DigestCopy.viewConfigTitle == "查看配置方法")
     }
 
     @MainActor
@@ -149,6 +159,73 @@ struct DigestSessionCheck {
             session.overviewMessage == DigestCopy.missingKeyHint,
             "生成目录无密钥必须给出引导。实际：\(session.overviewMessage ?? "nil")"
         )
+    }
+
+    @MainActor
+    private static func checkAnnotationDeferredDelete() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digest-ann-undo-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let itemID = UUID()
+        let cue = VideoSubtitleCue(startTime: 6, endTime: 8, text: "Hello world.\n大家好。")
+        let annotation = DigestAnnotation(
+            id: UUID(),
+            time: 6,
+            text: cue.text,
+            explanation: "这句是在打招呼。",
+            createdAt: Date(),
+            model: "m"
+        )
+        try DigestAnnotationsStore.save([annotation], itemID: itemID, folder: folder)
+        let session = DigestSession()
+        session.apiKeyEnvironment = [:]
+        session.load(itemID: itemID, folder: folder)
+        precondition(session.annotation(for: cue) != nil)
+        session.deleteAnnotation(annotation.id)
+        precondition(session.annotation(for: cue) == nil, "删除后短时应从画面消失")
+        precondition(session.latestPendingDeletion == .annotation(annotation.id))
+        session.undoDeleteAnnotation(annotation.id)
+        precondition(session.annotation(for: cue) != nil, "撤回后批注须回来")
+        precondition(DigestAnnotationsStore.load(itemID: itemID, folder: folder).count == 1, "撤回不得落盘删除")
+    }
+
+    @MainActor
+    private static func checkSaveFailureReverts() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digest-save-fail-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let itemID = UUID()
+        let session = DigestSession()
+        session.apiKeyEnvironment = [:]
+        session.load(itemID: itemID, folder: folder)
+        let sidecar = DigestNotesStore.fileURL(itemID: itemID, in: folder)
+        try FileManager.default.createDirectory(at: sidecar, withIntermediateDirectories: true)
+        let cue = VideoSubtitleCue(startTime: 1, endTime: 2, text: "Hello world.\n大家好。")
+        _ = session.toggleHighlight(cue: cue)
+        precondition(session.persistMessage == DigestCopy.saveFailed, "保存失败须提示")
+        precondition(session.notes.isEmpty, "保存失败须回退内存")
+    }
+
+    @MainActor
+    private static func checkCorruptLoadDoesNotOverwrite() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digest-corrupt-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let itemID = UUID()
+        let url = DigestNotesStore.fileURL(itemID: itemID, in: folder)
+        try "not-json".write(to: url, atomically: true, encoding: .utf8)
+        let session = DigestSession()
+        session.apiKeyEnvironment = [:]
+        session.load(itemID: itemID, folder: folder)
+        precondition(session.persistMessage == DigestCopy.fileCorrupt)
+        let after = try String(contentsOf: url, encoding: .utf8)
+        precondition(after == "not-json", "损坏文件不得被覆盖")
     }
 
     @MainActor

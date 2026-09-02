@@ -142,11 +142,10 @@ enum DigestGeminiRequestBuilder {
     static let model = "gemini-3.7-flash"
     static let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent")!
 
-    static func requestURL(apiKey: String) -> URL {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "&=?")
-        let encoded = apiKey.addingPercentEncoding(withAllowedCharacters: allowed) ?? apiKey
-        return URL(string: "\(endpoint.absoluteString)?key=\(encoded)")!
+    static let apiKeyHeader = "x-goog-api-key"
+
+    static func requestURL() -> URL {
+        endpoint
     }
 
     static func jsonObject(system: String, user: String, maxTokens: Int, temperature: Double? = nil) -> [String: Any] {
@@ -238,17 +237,9 @@ enum DigestRequestBuilder {
     }
 
     static func errorMessage(status: Int, data: Data) -> String {
-        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let error = object["error"] as? [String: Any],
-               let message = error["message"] as? String,
-               !message.isEmpty {
-                return message
-            }
-            if let message = object["message"] as? String, !message.isEmpty {
-                return message
-            }
-        }
-        return "请求失败（\(status)）"
+        _ = status
+        _ = data
+        return DigestCopy.requestFailed
     }
 }
 
@@ -326,8 +317,9 @@ enum DigestAPIClient {
         temperature: Double?,
         session: URLSession
     ) async throws -> String {
-        var request = URLRequest(url: DigestGeminiRequestBuilder.requestURL(apiKey: apiKey))
+        var request = URLRequest(url: DigestGeminiRequestBuilder.requestURL())
         request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: DigestGeminiRequestBuilder.apiKeyHeader)
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         guard let httpBody = DigestGeminiRequestBuilder.jsonData(
             system: system,

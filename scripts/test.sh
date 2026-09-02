@@ -113,8 +113,13 @@ compile_and_run digest_book_chrome_proof \
     "$project_dir/Sources/Replay/DigestExplainQuality.swift" \
     "$project_dir/Sources/Replay/OpenMyChrome.swift" \
     "$project_dir/Sources/Replay/DigestBookChrome.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
     "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
     "$project_dir/tools/digest_book_chrome_proof.swift"
+
+compile_and_run digest_jump \
+    "$project_dir/Sources/Replay/DigestJumpPlayback.swift" \
+    "$project_dir/tools/digest_jump_check.swift"
 
 compile_and_run digest_notes \
     "$project_dir/Sources/Replay/DigestNotes.swift" \
@@ -152,6 +157,7 @@ compile_and_run digest_highlight_notes_proof \
     "$project_dir/Sources/Replay/DigestNotes.swift" \
     "$project_dir/Sources/Replay/DigestNoteUndo.swift" \
     "$project_dir/Sources/Replay/DigestHighlightFilter.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
     "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
     "$project_dir/Sources/Replay/DigestHighlightViews.swift" \
     "$project_dir/tools/digest_highlight_notes_proof.swift"
@@ -264,6 +270,7 @@ compile_and_run digest_book_states_proof \
     "$project_dir/Sources/Replay/OpenMyChrome.swift" \
     "$project_dir/Sources/Replay/DigestBookChrome.swift" \
     "$project_dir/Sources/Replay/DigestCueRow.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
     "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
     "$project_dir/tools/digest_book_states_proof.swift"
 

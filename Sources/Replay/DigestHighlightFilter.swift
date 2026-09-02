@@ -40,6 +40,16 @@ enum DigestHighlightFilter {
         if let anchor, visibleIndices.contains(anchor) { return anchor }
         return visibleIndices.first
     }
+
+    /// 进入只看划线时记下阅读位置；过滤中滚动不得改写。
+    static func enterAnchor(reading: Int?, visible: [Int]) -> Int? {
+        scrollTarget(visibleIndices: visible, anchor: reading)
+    }
+
+    /// 退出时用进入时记下的锚点。
+    static func exitTarget(stored: Int?, visible: [Int]) -> Int? {
+        scrollTarget(visibleIndices: visible, anchor: stored)
+    }
 }
 
 enum DigestHighlightToggle {

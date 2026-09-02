@@ -19,6 +19,8 @@ final class DigestSession: ObservableObject {
     @Published var explainMessage: String?
     @Published var explainMessageByCue: [Int: String] = [:]
     @Published var pendingDeletions: [UUID: Date] = [:]
+    @Published var pendingAnnotationDeletions: [UUID: Date] = [:]
+    @Published var persistMessage: String?
     @Published var showsHighlightsOnly = false
     @Published var editingCommentNoteID: UUID?
     @Published var noteJustSaved = false
@@ -50,20 +52,45 @@ final class DigestSession: ObservableObject {
         overviewTask?.cancel()
         self.itemID = itemID
         self.folder = folder
-        notes = DigestNotesStore.load(itemID: itemID, folder: folder)
-            .sorted { $0.createdAt > $1.createdAt }
-        annotations = DigestAnnotationsStore.load(itemID: itemID, folder: folder)
+        persistMessage = nil
+        switch DigestNotesStore.read(itemID: itemID, folder: folder) {
+        case .ready(let loaded):
+            notes = loaded.sorted { $0.createdAt > $1.createdAt }
+        case .missing:
+            notes = []
+        case .corrupt:
+            notes = []
+            persistMessage = DigestCopy.fileCorrupt
+        }
+        switch DigestAnnotationsStore.read(itemID: itemID, folder: folder) {
+        case .ready(let loaded):
+            annotations = loaded
+        case .missing:
+            annotations = []
+        case .corrupt:
+            annotations = []
+            persistMessage = DigestCopy.fileCorrupt
+        }
         collapsedAnnotationIDs = []
-        if let record = DigestOverviewStore.load(itemID: itemID, folder: folder) {
+        switch DigestOverviewStore.read(itemID: itemID, folder: folder) {
+        case .ready(let record):
             overview = record.payload
             shouldAutoGenerateOverview = false
-        } else {
+        case .stale:
             overview = nil
-            shouldAutoGenerateOverview = DigestOverviewStore.fileExists(itemID: itemID, folder: folder)
+            shouldAutoGenerateOverview = true
+        case .missing:
+            overview = nil
+            shouldAutoGenerateOverview = false
+        case .corrupt:
+            overview = nil
+            shouldAutoGenerateOverview = false
+            persistMessage = DigestCopy.fileCorrupt
         }
         isGeneratingOverview = false
         overviewMessage = nil
         pendingDeletions = [:]
+        pendingAnnotationDeletions = [:]
         showsHighlightsOnly = false
         editingCommentNoteID = nil
         noteJustSaved = false
@@ -107,8 +134,33 @@ final class DigestSession: ObservableObject {
         )
     }
 
+    enum PendingDeletion: Equatable {
+        case note(UUID)
+        case annotation(UUID)
+    }
+
+    var latestPendingDeletion: PendingDeletion? {
+        let note = pendingDeletions.max(by: { $0.value < $1.value })
+        let annotation = pendingAnnotationDeletions.max(by: { $0.value < $1.value })
+        switch (note, annotation) {
+        case (nil, nil):
+            return nil
+        case (let note?, nil):
+            return .note(note.key)
+        case (nil, let annotation?):
+            return .annotation(annotation.key)
+        case (let note?, let annotation?):
+            return note.value >= annotation.value ? .note(note.key) : .annotation(annotation.key)
+        }
+    }
+
     var latestPendingDeletionID: UUID? {
-        pendingDeletions.max(by: { $0.value < $1.value })?.key
+        switch latestPendingDeletion {
+        case .note(let id), .annotation(let id):
+            return id
+        case nil:
+            return nil
+        }
     }
 
     func toggleHighlightFilter() {
@@ -121,8 +173,9 @@ final class DigestSession: ObservableObject {
 
     func updateComment(noteID: UUID, comment: String) {
         guard let index = notes.firstIndex(where: { $0.id == noteID }) else { return }
+        let previous = notes
         notes[index].comment = DigestNoteComment.normalized(comment)
-        persistNotes()
+        persistNotes(revertingTo: previous)
         if editingCommentNoteID == noteID {
             editingCommentNoteID = nil
         }
@@ -133,7 +186,11 @@ final class DigestSession: ObservableObject {
     }
 
     func annotation(for cue: VideoSubtitleCue) -> DigestAnnotation? {
-        DigestAnnotationAnchor.matching(time: cue.startTime, text: cue.text, in: annotations)
+        DigestAnnotationAnchor.matching(time: cue.startTime, text: cue.text, in: visibleAnnotations)
+    }
+
+    private var visibleAnnotations: [DigestAnnotation] {
+        annotations.filter { pendingAnnotationDeletions[$0.id] == nil }
     }
 
     func isAnnotationCollapsed(_ id: UUID) -> Bool {
@@ -145,14 +202,20 @@ final class DigestSession: ObservableObject {
     }
 
     func deleteAnnotation(_ id: UUID) {
-        guard let removed = annotations.first(where: { $0.id == id }) else { return }
-        annotations.removeAll { $0.id == id }
-        collapsedAnnotationIDs.remove(id)
-        if explanation == removed.explanation {
-            explanation = nil
+        requestDeleteAnnotation(id)
+    }
+
+    func requestDeleteAnnotation(_ id: UUID) {
+        guard annotations.contains(where: { $0.id == id }) else { return }
+        if pendingAnnotationDeletions[id] != nil {
+            return
         }
-        explanationByCue = explanationByCue.filter { $0.value != removed.explanation }
-        persistAnnotations()
+        DigestNoteUndo.request(pending: &pendingAnnotationDeletions, id: id)
+        scheduleDeletionCommit()
+    }
+
+    func undoDeleteAnnotation(_ id: UUID) {
+        DigestNoteUndo.undo(pending: &pendingAnnotationDeletions, id: id)
     }
 
     func recordAnnotation(time: Double, text: String, explanation: String, model: String) {
@@ -165,11 +228,12 @@ final class DigestSession: ObservableObject {
             createdAt: Date(),
             model: model
         )
+        let previous = annotations
         annotations = DigestAnnotationUpsert.applying(annotation, to: annotations)
         if let existing {
             collapsedAnnotationIDs.remove(existing.id)
         }
-        persistAnnotations()
+        persistAnnotations(revertingTo: previous)
     }
 
     func isExplainingCue(_ index: Int) -> Bool {
@@ -249,23 +313,69 @@ final class DigestSession: ObservableObject {
     }
 
     func commitExpiredDeletions(now: Date = Date()) {
-        let expired = DigestNoteUndo.expiredIDs(pending: pendingDeletions, now: now)
-        guard !expired.isEmpty else { return }
-        notes.removeAll { expired.contains($0.id) }
-        for id in expired {
-            pendingDeletions.removeValue(forKey: id)
+        let expiredNotes = DigestNoteUndo.expiredIDs(pending: pendingDeletions, now: now)
+        if !expiredNotes.isEmpty {
+            let previous = notes
+            notes.removeAll { expiredNotes.contains($0.id) }
+            for id in expiredNotes {
+                pendingDeletions.removeValue(forKey: id)
+            }
+            if !persistNotes(revertingTo: previous) {
+                for id in expiredNotes {
+                    DigestNoteUndo.request(pending: &pendingDeletions, id: id, now: now)
+                }
+            }
         }
-        persistNotes()
+        let expiredAnnotations = DigestNoteUndo.expiredIDs(pending: pendingAnnotationDeletions, now: now)
+        if !expiredAnnotations.isEmpty {
+            let previous = annotations
+            annotations.removeAll { expiredAnnotations.contains($0.id) }
+            for id in expiredAnnotations {
+                pendingAnnotationDeletions.removeValue(forKey: id)
+                collapsedAnnotationIDs.remove(id)
+            }
+            if !persistAnnotations(revertingTo: previous) {
+                for id in expiredAnnotations {
+                    DigestNoteUndo.request(pending: &pendingAnnotationDeletions, id: id, now: now)
+                }
+            }
+        }
     }
 
-    private func persistNotes() {
-        guard let itemID, let folder else { return }
-        try? DigestNotesStore.save(notes, itemID: itemID, folder: folder)
+    @discardableResult
+    private func persistNotes(revertingTo previous: [DigestNote]? = nil) -> Bool {
+        guard let itemID, let folder else { return false }
+        do {
+            try DigestNotesStore.save(notes, itemID: itemID, folder: folder)
+            if persistMessage == DigestCopy.saveFailed {
+                persistMessage = nil
+            }
+            return true
+        } catch {
+            if let previous {
+                notes = previous
+            }
+            persistMessage = DigestCopy.saveFailed
+            return false
+        }
     }
 
-    private func persistAnnotations() {
-        guard let itemID, let folder else { return }
-        try? DigestAnnotationsStore.save(annotations, itemID: itemID, folder: folder)
+    @discardableResult
+    private func persistAnnotations(revertingTo previous: [DigestAnnotation]? = nil) -> Bool {
+        guard let itemID, let folder else { return false }
+        do {
+            try DigestAnnotationsStore.save(annotations, itemID: itemID, folder: folder)
+            if persistMessage == DigestCopy.saveFailed {
+                persistMessage = nil
+            }
+            return true
+        } catch {
+            if let previous {
+                annotations = previous
+            }
+            persistMessage = DigestCopy.saveFailed
+            return false
+        }
     }
 
     private func scheduleDeletionCommit() {
@@ -275,7 +385,10 @@ final class DigestSession: ObservableObject {
                 guard let session = self else { return }
                 let now = Date()
                 session.commitExpiredDeletions(now: now)
-                guard let next = session.pendingDeletions.values.min() else { return }
+                let next = [session.pendingDeletions.values.min(), session.pendingAnnotationDeletions.values.min()]
+                    .compactMap { $0 }
+                    .min()
+                guard let next else { return }
                 let wait = next.timeIntervalSince(now)
                 if wait > 0 {
                     try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
@@ -329,44 +442,57 @@ final class DigestSession: ObservableObject {
         overviewTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let text = try await self.complete(
-                    system: system,
-                    user: user,
-                    apiKey: apiKey,
-                    maxTokens: DigestRequestBuilder.overviewMaxTokens,
-                    provider: provider,
-                    temperature: nil
-                )
-                guard !Task.isCancelled else { return }
-                guard let parsed = DigestOverviewCodec.parse(text) else {
-                    self.overviewMessage = DigestCopy.writeFailed
-                    self.isGeneratingOverview = false
-                    return
+                var accepted: DigestOverviewPayload?
+                for _ in 0..<2 {
+                    let text = try await self.complete(
+                        system: system,
+                        user: user,
+                        apiKey: apiKey,
+                        maxTokens: DigestRequestBuilder.overviewMaxTokens,
+                        provider: provider,
+                        temperature: nil
+                    )
+                    guard !Task.isCancelled else { return }
+                    guard let parsed = DigestOverviewCodec.parse(text) else { continue }
+                    let payload = DigestTOCComposer.compose(
+                        skeleton: chapters,
+                        ai: parsed,
+                        duration: resolvedDuration,
+                        cues: cues
+                    )
+                    if DigestTOCCompleteness.isComplete(
+                        payload,
+                        cues: cues,
+                        duration: resolvedDuration
+                    ) {
+                        accepted = payload
+                        break
+                    }
                 }
-                let payload = DigestTOCComposer.compose(
-                    skeleton: chapters,
-                    ai: parsed,
-                    duration: resolvedDuration,
-                    cues: cues
-                )
-                guard !payload.chapters.isEmpty else {
-                    self.overviewMessage = DigestCopy.writeFailed
+                guard let accepted else {
+                    self.overviewMessage = DigestCopy.tocIncomplete
                     self.isGeneratingOverview = false
                     return
                 }
                 let record = DigestOverviewRecord(
-                    payload: payload,
+                    payload: accepted,
                     generatedAt: Date(),
                     model: provider.activeModel
                 )
-                try DigestOverviewStore.save(record, itemID: itemID, folder: folder)
-                self.overview = payload
+                do {
+                    try DigestOverviewStore.save(record, itemID: itemID, folder: folder)
+                } catch {
+                    self.persistMessage = DigestCopy.saveFailed
+                    self.isGeneratingOverview = false
+                    return
+                }
+                self.overview = accepted
                 self.isGeneratingOverview = false
                 self.overviewMessage = nil
             } catch {
                 guard !Task.isCancelled else { return }
                 self.isGeneratingOverview = false
-                self.overviewMessage = error.localizedDescription
+                self.overviewMessage = DigestCopy.requestFailed
             }
         }
     }
@@ -392,17 +518,18 @@ final class DigestSession: ObservableObject {
         case .undoDelete(let id):
             undoDeleteNote(id)
         case .add:
-            guard let itemID, let folder else { return action }
             let captured = DigestNoteCapture.sources(
                 selected: cue.text,
                 hintIndex: 0,
                 cues: [DigestNoteSource(startTime: cue.startTime, text: cue.text)]
             )
             guard let source = captured.first else { return action }
+            let previous = notes
             let note = DigestNote(id: UUID(), time: source.startTime, text: source.text, createdAt: Date())
             notes.insert(note, at: 0)
-            try? DigestNotesStore.save(notes, itemID: itemID, folder: folder)
-            editingCommentNoteID = note.id
+            if persistNotes(revertingTo: previous) {
+                editingCommentNoteID = note.id
+            }
         }
         return action
     }
@@ -481,8 +608,8 @@ final class DigestSession: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self.isExplaining = false
                 self.explainingCueIndex = nil
-                self.explainMessage = error.localizedDescription
-                self.explainMessageByCue[cueIndex] = error.localizedDescription
+                self.explainMessage = DigestCopy.requestFailed
+                self.explainMessageByCue[cueIndex] = DigestCopy.requestFailed
             }
         }
     }
