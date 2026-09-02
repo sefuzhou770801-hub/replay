@@ -34,7 +34,8 @@ struct ContentView: View {
                 )
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 980, minHeight: 640)
+        // 窗口最小尺寸只写在 NSWindow.minSize。若给 SplitView 设死 minWidth，
+        // 侧栏滑出时 fittingSize 会变成窗口宽加栏宽，内容按比例撑出窗口。
         .coordinateSpace(name: "replay-window")
         .onPreferenceChange(URLBarFramePreferenceKey.self) { urlBarFrame = $0 }
         .background {
@@ -45,14 +46,6 @@ struct ContentView: View {
                 WindowWidthReader { width in
                     guard abs(windowWidth - width) > 0.5 else { return }
                     windowWidth = width
-                    if width < 1160,
-                       columnVisibility != .detailOnly,
-                       let selectedItem = store.selectedItem,
-                       selectedItem.hasSidePaneContent {
-                        withAnimation(.easeInOut(duration: 0.22)) {
-                            columnVisibility = .detailOnly
-                        }
-                    }
                 }
                 .frame(width: 0, height: 0)
             }

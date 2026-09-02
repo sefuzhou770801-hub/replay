@@ -5,6 +5,16 @@ project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 scratch_dir=$(mktemp -d)
 trap 'rm -rf "$scratch_dir"' EXIT
 
+# macOS 27 Command Line Tools SDK 缺 SwiftUI 宏插件时，改用相邻的 26 SDK。
+if [[ -z "${SDKROOT:-}" ]]; then
+    default_sdk=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+    default_sdk_version=$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || true)
+    compatibility_sdk="$(dirname "$default_sdk")/MacOSX26.sdk"
+    if [[ "$default_sdk_version" == 27.* && -d "$compatibility_sdk" ]]; then
+        export SDKROOT="$compatibility_sdk"
+    fi
+fi
+
 compile_and_run() {
     local name="$1"
     shift
@@ -349,6 +359,16 @@ compile_and_run sidebar_hittest \
     "$project_dir/Sources/Replay/OpenMyChrome.swift" \
     "$project_dir/Sources/Replay/SidebarQueueLayout.swift" \
     "$project_dir/tools/sidebar_hittest_check.swift"
+
+# 窄窗滑出左栏：挂载真实 ContentView，排除带 @main 的 ReplayApp。
+sidebar_slideout_sources=()
+while IFS= read -r file; do
+    sidebar_slideout_sources+=("$file")
+done < <(find "$project_dir/Sources/Replay" -name '*.swift' ! -name 'ReplayApp.swift' | sort)
+compile_and_run sidebar_slideout \
+    -parse-as-library \
+    "${sidebar_slideout_sources[@]}" \
+    "$project_dir/tools/sidebar_slideout_check.swift"
 
 compile_and_run subtitle_blocks \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
