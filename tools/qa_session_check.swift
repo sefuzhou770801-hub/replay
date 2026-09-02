@@ -97,6 +97,15 @@ struct QASessionCheck {
             defaults.set(true, forKey: WatchQAAvailability.defaultsKey)
             session.present(defaults: defaults)
             precondition(session.isPresented, "开关打开时必须能唤起问答浮层")
+            precondition(session.question.isEmpty, "无预填时问题须为空")
+
+            session.present(prefill: "来源句：大家好。", defaults: defaults)
+            precondition(session.question == "来源句：大家好。", "已打开时继续问须写入预填上下文")
+            _ = session.dismiss(resume: false)
+
+            session.present(prefill: "来源句：Hello world.", defaults: defaults)
+            precondition(session.isPresented)
+            precondition(session.question == "来源句：Hello world.", "打开浮层时须带上预填上下文")
             _ = session.dismiss(resume: false)
         }
     }

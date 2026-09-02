@@ -118,11 +118,19 @@ final class WatchQASession: ObservableObject {
 
     private var streamTask: Task<Void, Never>?
 
-    func present(defaults: UserDefaults = .standard) {
+    func present(prefill: String = "", defaults: UserDefaults = .standard) {
         guard WatchQAAvailability.isEnabled(defaults: defaults) else { return }
-        guard !isPresented else { return }
+        if isPresented {
+            if !prefill.isEmpty {
+                cancel()
+                question = prefill
+                answer = ""
+                statusMessage = WatchQAAPIKey.resolve() == nil ? WatchQAAPIKey.missingKeyHint : nil
+            }
+            return
+        }
         isPresented = true
-        question = ""
+        question = prefill
         answer = ""
         isStreaming = false
         streamTask?.cancel()

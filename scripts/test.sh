@@ -120,6 +120,10 @@ compile_and_run digest_notes \
     "$project_dir/Sources/Replay/DigestNotes.swift" \
     "$project_dir/tools/digest_notes_check.swift"
 
+compile_and_run digest_annotations \
+    "$project_dir/Sources/Replay/DigestAnnotations.swift" \
+    "$project_dir/tools/digest_annotations_check.swift"
+
 compile_and_run digest_note_full_proof \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
@@ -188,6 +192,18 @@ compile_and_run digest_book_states_proof \
     "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
     "$project_dir/tools/digest_book_states_proof.swift"
 
+compile_and_run digest_annotation_proof \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
+    "$project_dir/Sources/Replay/DigestTranscriptSearch.swift" \
+    "$project_dir/Sources/Replay/DigestCueDisplay.swift" \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/Sources/Replay/DigestBookChrome.swift" \
+    "$project_dir/Sources/Replay/DigestCueRow.swift" \
+    "$project_dir/Sources/Replay/DigestAnnotations.swift" \
+    "$project_dir/Sources/Replay/DigestAnnotationViews.swift" \
+    "$project_dir/tools/digest_annotation_proof.swift"
+
 compile_and_run player_ready \
     "$project_dir/Sources/Replay/WatchItem.swift" \
     "$project_dir/Sources/Replay/PlayerReadyDecision.swift" \
@@ -246,5 +262,6 @@ compile_and_run qa_remove \
     "$project_dir/Sources/Replay/DownloadRetryPolicy.swift" \
     "$project_dir/Sources/Replay/DownloadEngine.swift" \
     "$project_dir/Sources/Replay/WatchQAStore.swift" \
+    "$project_dir/Sources/Replay/DigestAnnotations.swift" \
     "$project_dir/Sources/Replay/QueueStore.swift" \
     "$project_dir/tools/qa_remove_check.swift"

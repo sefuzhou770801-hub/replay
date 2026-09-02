@@ -1,6 +1,6 @@
 import Foundation
 
-/// 删除接线回归：经**真实生产入口** `QueueStore.remove` 删视频，断言 qa sidecar 一并清掉。
+/// 删除接线回归：经**真实生产入口** `QueueStore.remove` 删视频，断言 qa 与批注 sidecar 一并清掉。
 /// 删掉 `remove` 里的 `deleteLocalFiles(for:)` 调用（或其中的清理）时本用例转红。
 @main
 struct QARemoveCheck {
@@ -17,10 +17,13 @@ struct QARemoveCheck {
 
         let id = UUID()
         let qaURL = WatchQAStore.fileURL(itemID: id, in: env.mediaFolder)
+        let annotationURL = DigestAnnotationsStore.fileURL(itemID: id, in: env.mediaFolder)
         let videoURL = env.mediaFolder.appendingPathComponent("\(id.uuidString).mp4")
         try Data("[]".utf8).write(to: qaURL)
+        try Data("[]".utf8).write(to: annotationURL)
         try Data("video".utf8).write(to: videoURL)
         precondition(FileManager.default.fileExists(atPath: qaURL.path))
+        precondition(FileManager.default.fileExists(atPath: annotationURL.path))
 
         let store = await MainActor.run {
             QueueStore(dataFile: env.dataFile, mediaFolder: env.mediaFolder)
@@ -29,7 +32,12 @@ struct QARemoveCheck {
 
         // deleteLocalFiles 里 actor deleteSidecar 是未等待的 Task，轮询到 qa.json 消失。
         try await waitUntilGone(qaURL)
+        try await waitUntilGone(annotationURL)
         precondition(!FileManager.default.fileExists(atPath: qaURL.path), "remove 必须删除 qa.json（删除接线）")
+        precondition(
+            !FileManager.default.fileExists(atPath: annotationURL.path),
+            "remove 必须删除 annotations.json（批注旁路文件）"
+        )
         precondition(!FileManager.default.fileExists(atPath: videoURL.path), "remove 必须删除视频文件")
     }
 
@@ -40,7 +48,9 @@ struct QARemoveCheck {
 
         let id = UUID()
         let qaURL = WatchQAStore.fileURL(itemID: id, in: env.mediaFolder)
+        let annotationURL = DigestAnnotationsStore.fileURL(itemID: id, in: env.mediaFolder)
         try Data("[]".utf8).write(to: qaURL)
+        try Data("[]".utf8).write(to: annotationURL)
 
         let store = await MainActor.run {
             QueueStore(dataFile: env.dataFile, mediaFolder: env.mediaFolder)
@@ -49,6 +59,10 @@ struct QARemoveCheck {
 
         try await Task.sleep(nanoseconds: 200_000_000)
         precondition(FileManager.default.fileExists(atPath: qaURL.path), "deleteMedia=false 不得删除 qa.json")
+        precondition(
+            FileManager.default.fileExists(atPath: annotationURL.path),
+            "deleteMedia=false 不得删除 annotations.json"
+        )
     }
 
     private struct Env {
