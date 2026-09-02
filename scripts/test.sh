@@ -140,6 +140,28 @@ compile_and_run digest_highlight \
     "$project_dir/Sources/Replay/DigestNoteUndo.swift" \
     "$project_dir/tools/digest_highlight_check.swift"
 
+compile_and_run digest_highlight_filter \
+    "$project_dir/Sources/Replay/DigestNotes.swift" \
+    "$project_dir/Sources/Replay/DigestNoteUndo.swift" \
+    "$project_dir/Sources/Replay/DigestHighlightFilter.swift" \
+    "$project_dir/tools/digest_highlight_filter_check.swift"
+
+compile_and_run digest_highlight_notes_proof \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
+    "$project_dir/Sources/Replay/DigestTranscriptSearch.swift" \
+    "$project_dir/Sources/Replay/DigestCueDisplay.swift" \
+    "$project_dir/Sources/Replay/DigestExplainQuality.swift" \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/Sources/Replay/DigestBookChrome.swift" \
+    "$project_dir/Sources/Replay/DigestCueRow.swift" \
+    "$project_dir/Sources/Replay/DigestNotes.swift" \
+    "$project_dir/Sources/Replay/DigestNoteUndo.swift" \
+    "$project_dir/Sources/Replay/DigestHighlightFilter.swift" \
+    "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
+    "$project_dir/Sources/Replay/DigestHighlightViews.swift" \
+    "$project_dir/tools/digest_highlight_notes_proof.swift"
+
 compile_and_run digest_hover \
     "$project_dir/Sources/Replay/DigestBookChrome.swift" \
     "$project_dir/tools/digest_hover_check.swift"

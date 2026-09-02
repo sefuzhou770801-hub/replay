@@ -5,6 +5,20 @@ struct DigestNote: Codable, Equatable, Identifiable {
     var time: Double
     var text: String
     var createdAt: Date
+    var comment: String?
+}
+
+enum DigestNoteComment {
+    static func normalized(_ raw: String?) -> String? {
+        let collapsed = (raw ?? "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return collapsed.isEmpty ? nil : collapsed
+    }
+
+    static func shouldDisplay(_ raw: String?) -> Bool {
+        normalized(raw) != nil
+    }
 }
 
 struct DigestNoteSource: Equatable {

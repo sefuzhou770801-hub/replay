@@ -9,6 +9,7 @@ enum DigestBookChrome {
     static let highlightTitle = "划线"
     static let tocPlaceholder = "生成目录"
     static let explainingLabel = "稍等…"
+    static let commentPlaceholder = "写一句批语"
     static let toolbarSpacing: CGFloat = 8
     static let headerHorizontalPadding: CGFloat = 12
 

@@ -73,6 +73,7 @@ struct DigestBookToolbar: View {
     let matchCount: Int
     let activeIndex: Int?
     let highlightCount: Int
+    var isFilterActive = false
     let step: (Int) -> Void
     var onHighlightFilter: () -> Void = {}
 
@@ -95,7 +96,7 @@ struct DigestBookToolbar: View {
             }
             .buttonStyle(.plain)
             .background(
-                OpenMyChrome.raise,
+                isFilterActive ? OpenMyChrome.rowSelected : OpenMyChrome.raise,
                 in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusSm, style: .continuous)
             )
             .overlay {

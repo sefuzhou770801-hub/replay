@@ -5,6 +5,9 @@ struct DigestNotesCheck {
     static func main() throws {
         checkFileNaming()
         try checkRoundTripAndDelete()
+        try checkCommentRoundTrip()
+        try checkLegacyFileWithoutComment()
+        checkCommentNormalization()
         checkCorruptAndMissing()
         checkCaptureWholeBlock()
         checkCaptureSpansTwoCues()
@@ -47,6 +50,69 @@ struct DigestNotesCheck {
         let remaining = loaded.filter { $0.id != note.id }
         try DigestNotesStore.save(remaining, itemID: itemID, folder: folder)
         precondition(DigestNotesStore.load(itemID: itemID, folder: folder).isEmpty, "删除后列表应为空")
+        precondition(loaded[0].comment == nil, "未写批语时 comment 为空")
+    }
+
+    private static func checkCommentRoundTrip() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digest-notes-comment-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let itemID = UUID()
+        let note = DigestNote(
+            id: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
+            time: 12.5,
+            text: "Hello world.\n大家好。",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            comment: "这句是关键"
+        )
+        try DigestNotesStore.save([note], itemID: itemID, folder: folder)
+
+        let loaded = DigestNotesStore.load(itemID: itemID, folder: folder)
+        precondition(loaded.count == 1)
+        precondition(loaded[0].comment == "这句是关键", "批语必须落盘并读回")
+        precondition(loaded[0].text == note.text)
+        precondition(DigestNoteComment.shouldDisplay(loaded[0].comment))
+    }
+
+    private static func checkLegacyFileWithoutComment() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digest-notes-legacy-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let itemID = UUID(uuidString: "9D0A346E-068C-41CE-B3FC-938A773AADC9")!
+        let url = DigestNotesStore.fileURL(itemID: itemID, in: folder)
+        let legacy = """
+        [
+          {
+            "createdAt" : "2023-11-14T22:13:20Z",
+            "id" : "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+            "text" : "探索分支旧笔记",
+            "time" : 8
+          }
+        ]
+        """
+        try legacy.write(to: url, atomically: true, encoding: .utf8)
+
+        let loaded = DigestNotesStore.load(itemID: itemID, folder: folder)
+        precondition(loaded.count == 1, "无批语字段的旧文件必须能读")
+        precondition(loaded[0].text == "探索分支旧笔记")
+        precondition(loaded[0].time == 8)
+        precondition(loaded[0].comment == nil, "旧文件缺字段时批语为空")
+        precondition(!DigestNoteComment.shouldDisplay(loaded[0].comment))
+    }
+
+    private static func checkCommentNormalization() {
+        precondition(DigestNoteComment.normalized(nil) == nil)
+        precondition(DigestNoteComment.normalized("   ") == nil)
+        precondition(DigestNoteComment.normalized("\n") == nil)
+        precondition(DigestNoteComment.normalized("  记下这句  ") == "记下这句")
+        precondition(DigestNoteComment.normalized("一行\n两行") == "一行 两行")
+        precondition(!DigestNoteComment.shouldDisplay(nil))
+        precondition(!DigestNoteComment.shouldDisplay("   "))
+        precondition(DigestNoteComment.shouldDisplay("有内容"))
     }
 
     private static func checkCorruptAndMissing() {
