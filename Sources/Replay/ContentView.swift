@@ -1160,8 +1160,11 @@ private struct VideoDetail: View {
             subtitleCues: subtitleTrack?.cues ?? [],
             qaEntries: visibleQAEntries,
             itemTitle: item.title,
+            itemAuthor: item.author,
+            itemDuration: item.duration,
             hasSubtitleSource: item.subtitleFileURL != nil || subtitleTrack != nil,
             currentTime: playback.currentTime,
+            isPlaying: playback.isPlaying,
             isPresented: chaptersPresented,
             digest: digest,
             toggle: toggleChapters,
@@ -2067,8 +2070,11 @@ private struct ChapterSidebar: View {
     let subtitleCues: [VideoSubtitleCue]
     let qaEntries: [WatchQAEntry]
     let itemTitle: String
+    let itemAuthor: String
+    let itemDuration: Double?
     let hasSubtitleSource: Bool
     let currentTime: Double
+    let isPlaying: Bool
     let isPresented: Bool
     @ObservedObject var digest: DigestSession
     let toggle: () -> Void
@@ -2090,6 +2096,7 @@ private struct ChapterSidebar: View {
     @State private var searchActive = 0
     @State private var searchScrollToken = 0
     @State private var hoveredCueIndex: Int?
+    @State private var tocExpanded = false
 
     private let autoFollowResumeDelay: TimeInterval = 4
     /// 超过该间隔的时间跳变视为 seek，立刻恢复高亮跟随。
@@ -2135,6 +2142,14 @@ private struct ChapterSidebar: View {
             if !searchHits.isEmpty {
                 searchScrollToken &+= 1
             }
+        }
+        .onChange(of: isPlaying) { playing in
+            if playing {
+                tocExpanded = false
+            }
+        }
+        .onChange(of: digest.overview) { _ in
+            tocExpanded = false
         }
     }
 
@@ -2194,7 +2209,20 @@ private struct ChapterSidebar: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: DigestCueDisplay.blockSpacing) {
                             if !displayCues.isEmpty {
-                                DigestTOCPlaceholder()
+                                DigestTOCBanner(
+                                    toc: digest.overview,
+                                    isGenerating: digest.isGeneratingOverview,
+                                    message: digest.overviewMessage,
+                                    hasAPIKey: digest.hasAPIKey,
+                                    isExpanded: tocExpanded,
+                                    currentTime: currentTime,
+                                    timeColumnWidth: timeColumnWidth,
+                                    onToggleExpand: { tocExpanded.toggle() },
+                                    onGenerate: generateTOC,
+                                    onSeek: seekFromTOC
+                                )
+                                .onAppear(perform: autoGenerateTOCIfNeeded)
+                                .onChange(of: subtitleCues) { _ in autoGenerateTOCIfNeeded() }
                             }
                             ForEach(qaInsertions.leading) { entry in
                                 qaCard(entry)
@@ -2397,6 +2425,33 @@ private struct ChapterSidebar: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(OpenMyChrome.hair)
         }
+    }
+
+    private func seekFromTOC(_ time: Double) {
+        selectCueTime(time)
+        if isPlaying {
+            tocExpanded = false
+        }
+    }
+
+    private func generateTOC() {
+        digest.generateOverview(
+            title: itemTitle,
+            author: itemAuthor,
+            duration: itemDuration,
+            cues: subtitleCues,
+            chapters: chapters
+        )
+    }
+
+    private func autoGenerateTOCIfNeeded() {
+        guard digest.shouldAutoGenerateOverview,
+              digest.hasAPIKey,
+              !subtitleCues.isEmpty,
+              digest.overview == nil,
+              !digest.isGeneratingOverview
+        else { return }
+        generateTOC()
     }
 
     /// 点歌词条目：先按目标索引刷新高亮/滚动，再交给播放器 seek。

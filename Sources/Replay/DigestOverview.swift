@@ -1,22 +1,35 @@
 import Foundation
 
+enum DigestTOCSource: String, Codable, Equatable {
+    case videoChapters
+    case generated
+}
+
 struct DigestGeneratedChapter: Codable, Equatable, Identifiable {
     var title: String
     var timestamp: String
     var timestampSeconds: Double
     var summary: String
+    var quote: DigestKeyQuote?
 
     var id: String { "\(timestampSeconds)-\(title)" }
 
     enum CodingKeys: String, CodingKey {
-        case title, timestamp, timestampSeconds, summary
+        case title, timestamp, timestampSeconds, summary, quote
     }
 
-    init(title: String, timestamp: String, timestampSeconds: Double, summary: String) {
+    init(
+        title: String,
+        timestamp: String,
+        timestampSeconds: Double,
+        summary: String,
+        quote: DigestKeyQuote? = nil
+    ) {
         self.title = title
         self.timestamp = timestamp
         self.timestampSeconds = timestampSeconds
         self.summary = summary
+        self.quote = quote
     }
 
     init(from decoder: Decoder) throws {
@@ -31,6 +44,7 @@ struct DigestGeneratedChapter: Codable, Equatable, Identifiable {
             timestampSeconds = DigestTimecode.seconds(from: timestamp) ?? 0
         }
         summary = (try? container.decode(String.self, forKey: .summary)) ?? ""
+        quote = try? container.decode(DigestKeyQuote.self, forKey: .quote)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -39,6 +53,7 @@ struct DigestGeneratedChapter: Codable, Equatable, Identifiable {
         try container.encode(timestamp, forKey: .timestamp)
         try container.encode(timestampSeconds, forKey: .timestampSeconds)
         try container.encode(summary, forKey: .summary)
+        try container.encodeIfPresent(quote, forKey: .quote)
     }
 }
 
@@ -87,26 +102,39 @@ struct DigestKeyQuote: Codable, Equatable, Identifiable {
 struct DigestOverviewPayload: Codable, Equatable {
     var chapters: [DigestGeneratedChapter]
     var keyQuotes: [DigestKeyQuote]
+    var source: DigestTOCSource
+    var durationSeconds: Double
 
     enum CodingKeys: String, CodingKey {
-        case chapters, keyQuotes
+        case chapters, keyQuotes, source, durationSeconds
     }
 
-    init(chapters: [DigestGeneratedChapter], keyQuotes: [DigestKeyQuote]) {
+    init(
+        chapters: [DigestGeneratedChapter],
+        keyQuotes: [DigestKeyQuote],
+        source: DigestTOCSource = .generated,
+        durationSeconds: Double = 0
+    ) {
         self.chapters = chapters
         self.keyQuotes = keyQuotes
+        self.source = source
+        self.durationSeconds = durationSeconds
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         chapters = try container.decodeIfPresent([DigestGeneratedChapter].self, forKey: .chapters) ?? []
         keyQuotes = try container.decodeIfPresent([DigestKeyQuote].self, forKey: .keyQuotes) ?? []
+        source = (try? container.decode(DigestTOCSource.self, forKey: .source)) ?? .generated
+        durationSeconds = (try? container.decode(Double.self, forKey: .durationSeconds)) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(chapters, forKey: .chapters)
         try container.encode(keyQuotes, forKey: .keyQuotes)
+        try container.encode(source, forKey: .source)
+        try container.encode(durationSeconds, forKey: .durationSeconds)
     }
 }
 
@@ -204,10 +232,28 @@ enum DigestOverviewPrompt {
         }.joined(separator: "\n")
     }
 
-    static func systemPrompt(duration: Double) -> String {
+    static func systemPrompt(duration: Double, skeletonBlock: String = "") -> String {
         let durationFormatted = DigestTimecode.format(duration)
         let late = DigestTimecode.format(lateThreshold(duration: duration))
         let maxTimestampSeconds = Int(duration.rounded())
+        let chapterRule: String
+        if skeletonBlock.isEmpty {
+            chapterRule = """
+            You must provide:
+            - Chapters with timestamps that COVER THE ENTIRE VIDEO from start to finish. This video runs until \(durationFormatted). Use your own judgment for how many chapters there should be and where the natural topic shifts happen — make as many or as few as the content genuinely calls for. The only hard rule is COVERAGE: the chapters must span the whole timeline, and your LAST chapter MUST come after \(late). Do NOT stop partway through or cluster all the chapters near the beginning — the later parts of the video need chapters too.
+            - For each chapter: one-sentence summary in Simplified Chinese, and at most one key quote from that chapter's transcript.
+            """
+        } else {
+            chapterRule = """
+            The video already has native chapters. You MUST keep that exact list: same count, same titles, same timestamps. Do not add, remove, rename, or retimestamp chapters.
+
+            For each given chapter:
+            - summary: one Simplified Chinese sentence
+            - at most one key quote from that chapter's transcript (omit if none is genuinely quotable)
+
+            \(skeletonBlock)
+            """
+        }
         return """
         You're my executive assistant. Read the transcript and produce a concise structural overview with chapters and key quotes.
 
@@ -217,9 +263,7 @@ enum DigestOverviewPrompt {
         - 金句 quote 必须保留说话人原话（字幕原文），只修正错字、标点和语气词。
         - 每条金句必须另给 translation：一句简体中文翻译，与双语字幕一致（原文上、译文下）。
 
-        You must provide:
-        - Chapters with timestamps that COVER THE ENTIRE VIDEO from start to finish. This video runs until \(durationFormatted). Use your own judgment for how many chapters there should be and where the natural topic shifts happen — make as many or as few as the content genuinely calls for. The only hard rule is COVERAGE: the chapters must span the whole timeline, and your LAST chapter MUST come after \(late). Do NOT stop partway through or cluster all the chapters near the beginning — the later parts of the video need chapters too.
-        - 3-5 key quotes from the transcript with their timestamps
+        \(chapterRule)
 
         For quotes, focus on:
         - Unique or contrarian insights that challenge conventional thinking
@@ -256,7 +300,7 @@ enum DigestOverviewPrompt {
         Output JSON (no markdown fences):
         {
           "chapters": [
-            {"title": "开场与问题", "timestamp": "0:00", "timestampSeconds": 0, "summary": "这节在讲什么"}
+            {"title": "开场与问题", "timestamp": "0:00", "timestampSeconds": 0, "summary": "这节在讲什么", "quote": {"quote": "Exact quote from transcript", "translation": "说话人原话的简体中文翻译", "timestamp": "0:15", "timestampSeconds": 15}}
           ],
           "keyQuotes": [
             {"quote": "Exact quote from transcript", "translation": "说话人原话的简体中文翻译", "timestamp": "2:30", "timestampSeconds": 150}
@@ -268,6 +312,7 @@ enum DigestOverviewPrompt {
         - timestampSeconds: Convert to seconds (2:30 = 2*60+30 = 150)
         - NEVER use 0:00/0 unless the content actually starts at [0:00]
         - EVERY timestamp must exist in the transcript — look it up!
+        - 每章至多一条金句。没有合适的金句就省略 quote。
         """
     }
 
@@ -275,14 +320,20 @@ enum DigestOverviewPrompt {
         title: String,
         author: String,
         duration: Double,
-        transcript: String
+        transcript: String,
+        skeletonBlock: String = ""
     ) -> String {
         let durationFormatted = DigestTimecode.format(duration)
         let maxTimestampSeconds = Int(duration.rounded())
+        let skeletonNote = skeletonBlock.isEmpty
+            ? "没有视频自带章节，请自行分章，章节标题用简体中文。"
+            : skeletonBlock
         return """
         Video title: \(title)
         Channel: \(author)
         VIDEO DURATION: \(durationFormatted) (\(maxTimestampSeconds) seconds) — do not use any timestamp beyond this!
+
+        \(skeletonNote)
 
         请用简体中文写章节标题和说明。金句 quote 保留原文，translation 写中文。
 
@@ -327,7 +378,7 @@ enum DigestOverviewCodec {
 
 enum DigestOverviewStore {
     static let sidecarSuffix = "digest.json"
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
     static let language = "zh-Hans"
 
     static func fileURL(itemID: UUID, in folder: URL) -> URL {
