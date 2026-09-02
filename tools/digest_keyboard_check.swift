@@ -17,8 +17,8 @@ struct DigestKeyboardCheck {
     }
 
     private static func assertSchemeWhenBookAvailable() {
-        precondition(route(keyCode: 126) == .moveFocus(-1), "上方向键必须移到上一句")
-        precondition(route(keyCode: 125) == .moveFocus(1), "下方向键必须移到下一句")
+        precondition(route(character: "[", keyCode: 33) == .moveFocus(-1), "[ 必须移到上一句")
+        precondition(route(character: "]", keyCode: 30) == .moveFocus(1), "] 必须移到下一句")
         precondition(route(keyCode: 36) == .jump, "回车必须跳到焦点句播放")
         precondition(route(keyCode: 76) == .jump, "小键盘回车必须同样跳播放")
         precondition(route(character: "e", keyCode: 14) == .explain, "e 必须解释焦点句")
@@ -27,6 +27,8 @@ struct DigestKeyboardCheck {
         precondition(route(character: "H", keyCode: 4) == .highlight, "大写 H 必须同样划线")
         precondition(route(character: "l", keyCode: 37) == .toggleHighlightsOnly, "l 必须切换只看划线")
         precondition(route(character: "L", keyCode: 37) == .toggleHighlightsOnly, "大写 L 必须同样切换只看划线")
+        precondition(route(keyCode: 126) == .passThrough, "上方向键不得占用，必须留给调速")
+        precondition(route(keyCode: 125) == .passThrough, "下方向键不得占用，必须留给调速")
     }
 
     private static func assertSchemeWhenBookUnavailable() {
@@ -36,7 +38,7 @@ struct DigestKeyboardCheck {
                 "没有字幕书时方向键与回车必须放行，交给播放快捷键"
             )
         }
-        for character in ["e", "h", "l"] {
+        for character in ["e", "h", "l", "[", "]"] {
             precondition(
                 route(bookAvailable: false, character: character, keyCode: 0) == .passThrough,
                 "没有字幕书时 \(character) 必须放行"
@@ -51,7 +53,7 @@ struct DigestKeyboardCheck {
                 "搜索框或批语输入中，方向键与回车不得拦截"
             )
         }
-        for character in ["e", "h", "l", "a", "f"] {
+        for character in ["e", "h", "l", "a", "f", "[", "]"] {
             precondition(
                 route(isEditingText: true, character: character, keyCode: 0) == .passThrough,
                 "输入中 \(character) 必须留给文字"
@@ -62,6 +64,8 @@ struct DigestKeyboardCheck {
     private static func assertPlaybackKeysStillReachPlayer() {
         precondition(route(keyCode: 123) == .passThrough, "左方向键必须留给快退")
         precondition(route(keyCode: 124) == .passThrough, "右方向键必须留给快进")
+        precondition(route(keyCode: 126) == .passThrough, "上方向键必须留给调速")
+        precondition(route(keyCode: 125) == .passThrough, "下方向键必须留给调速")
         precondition(route(keyCode: 49) == .passThrough, "空格必须留给播放")
         precondition(route(character: "a", keyCode: 0) == .passThrough, "a 必须留给看时问答")
         precondition(route(character: "f", keyCode: 3) == .passThrough, "f 必须留给全屏")
@@ -70,19 +74,27 @@ struct DigestKeyboardCheck {
             "带修饰键的 e 不得当解释"
         )
         precondition(
-            route(keyCode: 126, modifiers: .shift) == .passThrough,
-            "Shift-上方向键不得移句"
+            route(character: "[", keyCode: 33, modifiers: .shift) == .passThrough,
+            "Shift-[ 不得移句"
         )
     }
 
     private static func assertDispatchPrefersDigestThenPlayback() {
         precondition(
-            dispatch(keyCode: 126) == .digest(.moveFocus(-1)),
-            "字幕书可用时上方向键必须走句焦点，不得再调速度"
+            dispatch(character: "[", keyCode: 33) == .digest(.moveFocus(-1)),
+            "字幕书可用时 [ 必须走上一句"
         )
         precondition(
-            dispatch(keyCode: 125) == .digest(.moveFocus(1)),
-            "字幕书可用时下方向键必须走句焦点"
+            dispatch(character: "]", keyCode: 30) == .digest(.moveFocus(1)),
+            "字幕书可用时 ] 必须走下一句"
+        )
+        precondition(
+            dispatch(keyCode: 126) == .playback(.adjustRate(0.1)),
+            "字幕书可用时上方向键必须仍加快播放速度"
+        )
+        precondition(
+            dispatch(keyCode: 125) == .playback(.adjustRate(-0.1)),
+            "字幕书可用时下方向键必须仍减慢播放速度"
         )
         precondition(
             dispatch(bookAvailable: false, keyCode: 126) == .playback(.adjustRate(0.1)),
@@ -109,6 +121,10 @@ struct DigestKeyboardCheck {
         precondition(
             dispatch(isEditingText: true, keyCode: 126) == .playback(.passThrough),
             "输入中上方向键必须交给光标"
+        )
+        precondition(
+            dispatch(isEditingText: true, character: "[", keyCode: 33) == .playback(.passThrough),
+            "输入中 [ 必须留给文字"
         )
         precondition(
             dispatch(isEditingText: true, keyCode: 49) == .playback(.insertLiteralSpace)

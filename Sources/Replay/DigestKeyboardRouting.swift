@@ -10,8 +10,8 @@ enum DigestKeyboardAction: Equatable {
 }
 
 /// 字幕书快捷键。字幕书可用且焦点不在输入框时生效：
-/// 上下方向键移句、回车跳播放、e 解释、h 划线、l 切换只看划线。
-/// 空格、左右方向键、a、f 仍交给播放。
+/// [ / ] 移句、回车跳播放、e 解释、h 划线、l 切换只看划线。
+/// 上下方向键始终调速度；空格、左右方向键、a、f 仍交给播放。
 enum DigestKeyboardRouting {
     private static let shortcutModifiers: NSEvent.ModifierFlags = [
         .command, .option, .control, .shift
@@ -30,13 +30,15 @@ enum DigestKeyboardRouting {
         let mods = modifiers.intersection(shortcutModifiers)
         guard mods.isEmpty else { return .passThrough }
 
-        switch keyCode {
-        case 126:
-            return .moveFocus(-1)
-        case 125:
-            return .moveFocus(1)
-        case 36, 76:
+        if keyCode == 36 || keyCode == 76 {
             return .jump
+        }
+
+        switch character {
+        case "[":
+            return .moveFocus(-1)
+        case "]":
+            return .moveFocus(1)
         default:
             break
         }
