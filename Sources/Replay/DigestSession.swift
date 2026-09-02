@@ -197,12 +197,13 @@ final class DigestSession: ObservableObject {
         title: String,
         author: String,
         duration: Double?,
-        cues: [VideoSubtitleCue]
+        cues: [VideoSubtitleCue],
+        chapters: [VideoChapter] = []
     ) {
         guard !isGeneratingOverview else { return }
         let provider = DigestProvider.resolve()
         guard let apiKey = DigestAPIKey.resolve(provider: provider) else {
-            overviewMessage = DigestRequestBuilder.missingKeyHint
+            overviewMessage = DigestTOCCopy.missingKeyHint
             return
         }
         guard !cues.isEmpty else {
@@ -213,12 +214,17 @@ final class DigestSession: ObservableObject {
 
         let resolvedDuration = DigestOverviewPrompt.resolvedDuration(itemDuration: duration, cues: cues)
         let transcript = DigestOverviewPrompt.timestampedTranscript(from: cues)
-        let system = DigestOverviewPrompt.systemPrompt(duration: resolvedDuration)
+        let skeletonBlock = DigestTOCComposer.skeletonBlock(from: chapters)
+        let system = DigestOverviewPrompt.systemPrompt(
+            duration: resolvedDuration,
+            skeletonBlock: skeletonBlock
+        )
         let user = DigestOverviewPrompt.userPrompt(
             title: title,
             author: author,
             duration: resolvedDuration,
-            transcript: transcript
+            transcript: transcript,
+            skeletonBlock: skeletonBlock
         )
 
         isGeneratingOverview = true
@@ -235,7 +241,18 @@ final class DigestSession: ObservableObject {
                     provider: provider
                 )
                 guard !Task.isCancelled else { return }
-                guard let payload = DigestOverviewCodec.parse(text) else {
+                guard let parsed = DigestOverviewCodec.parse(text) else {
+                    self?.overviewMessage = "这次没写成"
+                    self?.isGeneratingOverview = false
+                    return
+                }
+                let payload = DigestTOCComposer.compose(
+                    skeleton: chapters,
+                    ai: parsed,
+                    duration: resolvedDuration,
+                    cues: cues
+                )
+                guard !payload.chapters.isEmpty else {
                     self?.overviewMessage = "这次没写成"
                     self?.isGeneratingOverview = false
                     return
@@ -248,14 +265,7 @@ final class DigestSession: ObservableObject {
                 try DigestOverviewStore.save(record, itemID: itemID, folder: folder)
                 self?.overview = payload
                 self?.isGeneratingOverview = false
-                if !DigestOverviewPrompt.lastChapterCoversLatePart(
-                    chapters: payload.chapters,
-                    duration: resolvedDuration
-                ) {
-                    self?.overviewMessage = "后面几段几乎没写到，可以再写一次。"
-                } else {
-                    self?.overviewMessage = nil
-                }
+                self?.overviewMessage = nil
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.isGeneratingOverview = false
