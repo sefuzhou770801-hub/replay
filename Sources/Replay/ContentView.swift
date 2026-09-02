@@ -2096,6 +2096,8 @@ private struct ChapterSidebar: View {
     @State private var searchActive = 0
     @State private var searchScrollToken = 0
     @State private var hoveredCueIndex: Int?
+    @State private var highlightFilterAnchorIndex: Int?
+    @State private var highlightFilterScrollToken = 0
     @State private var tocExpanded = false
 
     private let autoFollowResumeDelay: TimeInterval = 4
@@ -2104,6 +2106,19 @@ private struct ChapterSidebar: View {
 
     private var searchHits: [Int] {
         DigestTranscriptSearch.matchingCueIndices(in: displayCues, query: searchQuery)
+    }
+
+    private var visibleBookIndices: [Int] {
+        DigestHighlightFilter.visibleIndices(
+            cues: displayCues.map { DigestNoteSource(startTime: $0.startTime, text: $0.text) },
+            notes: digest.notes,
+            pending: digest.pendingDeletions,
+            highlightsOnly: digest.showsHighlightsOnly
+        )
+    }
+
+    private var collapsedHiddenCount: Int {
+        DigestHighlightFilter.hiddenCount(total: displayCues.count, visible: visibleBookIndices.count)
     }
 
     var body: some View {
@@ -2202,154 +2217,209 @@ private struct ChapterSidebar: View {
                         matchCount: searchHits.count,
                         activeIndex: searchHits.isEmpty ? nil : searchActive,
                         highlightCount: digest.highlightCount,
-                        step: stepSearch
+                        isFilterActive: digest.showsHighlightsOnly,
+                        step: stepSearch,
+                        onHighlightFilter: toggleHighlightFilter
                     )
                 }
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: DigestCueDisplay.blockSpacing) {
-                            if !displayCues.isEmpty {
-                                DigestTOCBanner(
-                                    toc: digest.overview,
-                                    isGenerating: digest.isGeneratingOverview,
-                                    message: digest.overviewMessage,
-                                    hasAPIKey: digest.hasAPIKey,
-                                    isExpanded: tocExpanded,
-                                    currentTime: currentTime,
-                                    timeColumnWidth: timeColumnWidth,
-                                    onToggleExpand: { tocExpanded.toggle() },
-                                    onGenerate: generateTOC,
-                                    onSeek: seekFromTOC
-                                )
-                                .onAppear(perform: autoGenerateTOCIfNeeded)
-                                .onChange(of: subtitleCues) { _ in autoGenerateTOCIfNeeded() }
-                            }
-                            ForEach(qaInsertions.leading) { entry in
-                                qaCard(entry)
-                            }
-                            ForEach(displayCues.indices, id: \.self) { index in
-                                let cue = displayCues[index]
-                                let isCurrent = activeCueIndex == index
-                                let isHit = searchHits.contains(index)
-                                let isActiveHit = searchHits.indices.contains(searchActive) && searchHits[searchActive] == index
-                                VStack(alignment: .leading, spacing: DigestCueDisplay.pairSpacing) {
-                                    DigestCueRow(
-                                        timeLabel: formatTime(cue.startTime),
-                                        cueText: cue.text,
+                ZStack(alignment: .bottom) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: DigestCueDisplay.blockSpacing) {
+                                if !displayCues.isEmpty && !digest.showsHighlightsOnly {
+                                    DigestTOCBanner(
+                                        toc: digest.overview,
+                                        isGenerating: digest.isGeneratingOverview,
+                                        message: digest.overviewMessage,
+                                        hasAPIKey: digest.hasAPIKey,
+                                        isExpanded: tocExpanded,
+                                        currentTime: currentTime,
                                         timeColumnWidth: timeColumnWidth,
-                                        isCurrent: isCurrent,
-                                        query: searchQuery,
-                                        isHighlighted: digest.isHighlighted(cue),
-                                        showsActions: hoveredCueIndex == index,
-                                        onSeek: { jumpToCue(index: index) },
-                                        onExplain: {
-                                            digest.explainCue(index: index, title: itemTitle, cues: displayCues)
-                                        },
-                                        onHighlight: { digest.toggleHighlight(cue: cue) }
+                                        onToggleExpand: { tocExpanded.toggle() },
+                                        onGenerate: generateTOC,
+                                        onSeek: seekFromTOC
                                     )
-                                    .help("跳到这句")
-                                    .background {
-                                        DigestHoverMonitor { hovering in
-                                            if hovering {
-                                                hoveredCueIndex = index
-                                            } else if hoveredCueIndex == index {
-                                                hoveredCueIndex = nil
-                                            }
-                                        }
-                                    }
-
-                                    if digest.isExplainingCue(index) {
-                                        DigestExplainProgress()
-                                            .padding(.leading, timeColumnWidth + 10)
-                                    } else {
-                                        if let annotation = digest.annotation(for: cue) {
-                                            DigestAnnotationCard(
-                                                annotation: annotation,
-                                                isCollapsed: digest.isAnnotationCollapsed(annotation.id),
-                                                showsContinueAsk: DigestContinueAsk.isVisible(
-                                                    watchQAEnabled: watchQAEnabled
-                                                ),
-                                                onToggle: { digest.toggleAnnotationCollapsed(annotation.id) },
-                                                onDelete: { digest.deleteAnnotation(annotation.id) },
-                                                onContinueAsk: { onContinueAsk(annotation) }
-                                            )
-                                            .padding(.leading, timeColumnWidth + 10)
-                                        } else if let explanation = digest.explanation(for: index) {
-                                            DigestExplainBubble(text: explanation)
-                                                .padding(.leading, timeColumnWidth + 10)
-                                        }
-                                        if digest.needsRetry(index) {
-                                            DigestExplainRetryBar {
-                                                digest.explainCue(index: index, title: itemTitle, cues: displayCues)
-                                            }
-                                            .padding(.leading, timeColumnWidth + 10)
-                                        }
-                                    }
-                                    if let message = digest.explainMessage(for: index) {
-                                        Text(message)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(OpenMyChrome.muted)
-                                            .padding(.leading, timeColumnWidth + 10)
-                                    }
+                                    .onAppear(perform: autoGenerateTOCIfNeeded)
+                                    .onChange(of: subtitleCues) { _ in autoGenerateTOCIfNeeded() }
                                 }
-                                .padding(.leading, 10)
-                                .padding(.trailing, 14)
-                                .padding(.vertical, DigestCueDisplay.rowVerticalPadding)
-                                .background {
-                                    if isActiveHit {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(OpenMyChrome.warning.opacity(0.22))
-                                    } else if isHit {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(OpenMyChrome.warning.opacity(0.1))
-                                    } else if isCurrent {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(Color.primary.opacity(0.1))
-                                    }
-                                }
-                                .id(index)
-                                if qaInsertions.after.indices.contains(index) {
-                                    ForEach(qaInsertions.after[index]) { entry in
+                                if !digest.showsHighlightsOnly {
+                                    ForEach(qaInsertions.leading) { entry in
                                         qaCard(entry)
                                     }
                                 }
+                                ForEach(visibleBookIndices, id: \.self) { index in
+                                    let cue = displayCues[index]
+                                    let isCurrent = activeCueIndex == index
+                                    let isHit = searchHits.contains(index)
+                                    let isActiveHit = searchHits.indices.contains(searchActive) && searchHits[searchActive] == index
+                                    VStack(alignment: .leading, spacing: DigestCueDisplay.pairSpacing) {
+                                        DigestCueRow(
+                                            timeLabel: formatTime(cue.startTime),
+                                            cueText: cue.text,
+                                            timeColumnWidth: timeColumnWidth,
+                                            isCurrent: isCurrent,
+                                            query: searchQuery,
+                                            isHighlighted: digest.isHighlighted(cue),
+                                            showsActions: hoveredCueIndex == index,
+                                            onSeek: { jumpToCue(index: index) },
+                                            onExplain: {
+                                                digest.explainCue(index: index, title: itemTitle, cues: displayCues)
+                                            },
+                                            onHighlight: { digest.toggleHighlight(cue: cue) }
+                                        )
+                                        .help("跳到这句")
+                                        .background {
+                                            DigestHoverMonitor { hovering in
+                                                if hovering {
+                                                    hoveredCueIndex = index
+                                                } else if hoveredCueIndex == index {
+                                                    hoveredCueIndex = nil
+                                                }
+                                            }
+                                        }
+
+                                        if let note = digest.note(for: cue),
+                                           digest.editingCommentNoteID == note.id
+                                            || DigestNoteComment.shouldDisplay(note.comment)
+                                            || hoveredCueIndex == index {
+                                            DigestHighlightCommentRow(
+                                                text: note.comment ?? "",
+                                                isEditing: digest.editingCommentNoteID == note.id,
+                                                showPlaceholder: hoveredCueIndex == index
+                                                    && digest.editingCommentNoteID != note.id
+                                                    && !DigestNoteComment.shouldDisplay(note.comment),
+                                                onBeginEdit: { digest.beginEditComment(noteID: note.id) },
+                                                onSave: { digest.updateComment(noteID: note.id, comment: $0) }
+                                            )
+                                            .padding(.leading, timeColumnWidth + 10)
+                                        }
+
+                                        if !digest.showsHighlightsOnly {
+                                            if digest.isExplainingCue(index) {
+                                                DigestExplainProgress()
+                                                    .padding(.leading, timeColumnWidth + 10)
+                                            } else {
+                                                if let annotation = digest.annotation(for: cue) {
+                                                    DigestAnnotationCard(
+                                                        annotation: annotation,
+                                                        isCollapsed: digest.isAnnotationCollapsed(annotation.id),
+                                                        showsContinueAsk: DigestContinueAsk.isVisible(
+                                                            watchQAEnabled: watchQAEnabled
+                                                        ),
+                                                        onToggle: { digest.toggleAnnotationCollapsed(annotation.id) },
+                                                        onDelete: { digest.deleteAnnotation(annotation.id) },
+                                                        onContinueAsk: { onContinueAsk(annotation) }
+                                                    )
+                                                    .padding(.leading, timeColumnWidth + 10)
+                                                } else if let explanation = digest.explanation(for: index) {
+                                                    DigestExplainBubble(text: explanation)
+                                                        .padding(.leading, timeColumnWidth + 10)
+                                                }
+                                                if digest.needsRetry(index) {
+                                                    DigestExplainRetryBar {
+                                                        digest.explainCue(index: index, title: itemTitle, cues: displayCues)
+                                                    }
+                                                    .padding(.leading, timeColumnWidth + 10)
+                                                }
+                                            }
+                                            if let message = digest.explainMessage(for: index) {
+                                                Text(message)
+                                                    .font(.system(size: 11))
+                                                    .foregroundStyle(OpenMyChrome.muted)
+                                                    .padding(.leading, timeColumnWidth + 10)
+                                            }
+                                        }
+                                    }
+                                    .padding(.leading, 10)
+                                    .padding(.trailing, 14)
+                                    .padding(.vertical, DigestCueDisplay.rowVerticalPadding)
+                                    .background {
+                                        if isActiveHit {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(OpenMyChrome.warning.opacity(0.22))
+                                        } else if isHit {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(OpenMyChrome.warning.opacity(0.1))
+                                        } else if isCurrent {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(Color.primary.opacity(0.1))
+                                        }
+                                    }
+                                    .id(index)
+                                    if !digest.showsHighlightsOnly, qaInsertions.after.indices.contains(index) {
+                                        ForEach(qaInsertions.after[index]) { entry in
+                                            qaCard(entry)
+                                        }
+                                    }
+                                }
+                                if digest.showsHighlightsOnly, collapsedHiddenCount > 0 {
+                                    DigestCollapsedHint(hiddenCount: collapsedHiddenCount)
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 8)
+                            .background {
+                                SidePaneScrollActivityMonitor {
+                                    noteUserScroll()
+                                }
+                                .frame(width: 0, height: 0)
                             }
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 8)
-                        .background {
-                            SidePaneScrollActivityMonitor {
-                                noteUserScroll()
+                        .scrollIndicators(.hidden)
+                        .onAppear {
+                            refreshActiveCue(at: currentTime)
+                            if let activeCueIndex {
+                                DispatchQueue.main.async {
+                                    scrollToCue(activeCueIndex, proxy: proxy)
+                                }
                             }
-                            .frame(width: 0, height: 0)
                         }
-                    }
-                    .scrollIndicators(.hidden)
-                    .onAppear {
-                        refreshActiveCue(at: currentTime)
-                        if let activeCueIndex {
+                        .onChange(of: activeCueIndex) { newIndex in
+                            guard Date() >= autoFollowSuspendedUntil,
+                                  newIndex != nil else { return }
+                            followScrollToken &+= 1
+                        }
+                        .onChange(of: followScrollToken) { _ in
+                            guard let activeCueIndex else { return }
+                            guard Date() >= autoFollowSuspendedUntil else { return }
+                            guard visibleBookIndices.contains(activeCueIndex) else { return }
+                            scrollToCue(activeCueIndex, proxy: proxy)
+                        }
+                        .onChange(of: searchScrollToken) { _ in
+                            guard searchHits.indices.contains(searchActive) else { return }
+                            let index = searchHits[searchActive]
+                            guard visibleBookIndices.contains(index) else { return }
+                            scrollToCue(index, proxy: proxy)
+                        }
+                        .onChange(of: highlightFilterScrollToken) { _ in
+                            let target = DigestHighlightFilter.scrollTarget(
+                                visibleIndices: visibleBookIndices,
+                                anchor: highlightFilterAnchorIndex ?? activeCueIndex
+                            )
+                            guard let target else { return }
                             DispatchQueue.main.async {
-                                scrollToCue(activeCueIndex, proxy: proxy)
+                                scrollToCue(target, proxy: proxy)
                             }
                         }
                     }
-                    .onChange(of: activeCueIndex) { newIndex in
-                        guard Date() >= autoFollowSuspendedUntil,
-                              newIndex != nil else { return }
-                        followScrollToken &+= 1
-                    }
-                    .onChange(of: followScrollToken) { _ in
-                        guard let activeCueIndex else { return }
-                        guard Date() >= autoFollowSuspendedUntil else { return }
-                        scrollToCue(activeCueIndex, proxy: proxy)
-                    }
-                    .onChange(of: searchScrollToken) { _ in
-                        guard searchHits.indices.contains(searchActive) else { return }
-                        scrollToCue(searchHits[searchActive], proxy: proxy)
+                    if let pendingID = digest.latestPendingDeletionID {
+                        DigestNoteUndoBar {
+                            digest.undoDeleteNote(pendingID)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
                     }
                 }
             }
         }
+    }
+
+    private func toggleHighlightFilter() {
+        highlightFilterAnchorIndex = hoveredCueIndex
+            ?? activeCueIndex.flatMap { visibleBookIndices.contains($0) ? $0 : nil }
+            ?? visibleBookIndices.first
+        digest.toggleHighlightFilter()
+        highlightFilterScrollToken &+= 1
     }
 
     private func stepSearch(_ delta: Int) {

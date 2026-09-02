@@ -19,6 +19,8 @@ final class DigestSession: ObservableObject {
     @Published var explainMessage: String?
     @Published var explainMessageByCue: [Int: String] = [:]
     @Published var pendingDeletions: [UUID: Date] = [:]
+    @Published var showsHighlightsOnly = false
+    @Published var editingCommentNoteID: UUID?
     @Published var noteJustSaved = false
     @Published var explainNeedsRetry = false
     @Published var retryCueIndices: Set<Int> = []
@@ -54,6 +56,8 @@ final class DigestSession: ObservableObject {
         isGeneratingOverview = false
         overviewMessage = nil
         pendingDeletions = [:]
+        showsHighlightsOnly = false
+        editingCommentNoteID = nil
         noteJustSaved = false
         explainNeedsRetry = false
         explanationByCue = [:]
@@ -83,7 +87,37 @@ final class DigestSession: ObservableObject {
     }
 
     func isHighlighted(_ cue: VideoSubtitleCue) -> Bool {
-        DigestHighlight.isMarked(time: cue.startTime, text: cue.text, notes: notes)
+        note(for: cue) != nil
+    }
+
+    func note(for cue: VideoSubtitleCue) -> DigestNote? {
+        DigestHighlightFilter.matchingVisibleNote(
+            time: cue.startTime,
+            text: cue.text,
+            notes: notes,
+            pending: pendingDeletions
+        )
+    }
+
+    var latestPendingDeletionID: UUID? {
+        pendingDeletions.max(by: { $0.value < $1.value })?.key
+    }
+
+    func toggleHighlightFilter() {
+        showsHighlightsOnly.toggle()
+    }
+
+    func beginEditComment(noteID: UUID) {
+        editingCommentNoteID = noteID
+    }
+
+    func updateComment(noteID: UUID, comment: String) {
+        guard let index = notes.firstIndex(where: { $0.id == noteID }) else { return }
+        notes[index].comment = DigestNoteComment.normalized(comment)
+        persistNotes()
+        if editingCommentNoteID == noteID {
+            editingCommentNoteID = nil
+        }
     }
 
     func explanation(for index: Int) -> String? {
@@ -329,22 +363,34 @@ final class DigestSession: ObservableObject {
         explainSelection(title: title, cues: cues)
     }
 
-    func toggleHighlight(cue: VideoSubtitleCue) {
-        guard let itemID, let folder else { return }
-        if let existing = DigestHighlight.matchingNote(time: cue.startTime, text: cue.text, in: notes) {
-            notes.removeAll { $0.id == existing.id }
-            try? DigestNotesStore.save(notes, itemID: itemID, folder: folder)
-            return
-        }
-        let captured = DigestNoteCapture.sources(
-            selected: cue.text,
-            hintIndex: 0,
-            cues: [DigestNoteSource(startTime: cue.startTime, text: cue.text)]
+    @discardableResult
+    func toggleHighlight(cue: VideoSubtitleCue) -> DigestHighlightToggle.Action {
+        let action = DigestHighlightToggle.action(
+            time: cue.startTime,
+            text: cue.text,
+            notes: notes,
+            pending: pendingDeletions
         )
-        guard let source = captured.first else { return }
-        let note = DigestNote(id: UUID(), time: source.startTime, text: source.text, createdAt: Date())
-        notes.insert(note, at: 0)
-        try? DigestNotesStore.save(notes, itemID: itemID, folder: folder)
+        switch action {
+        case .requestDelete(let id):
+            editingCommentNoteID = nil
+            requestDeleteNote(id)
+        case .undoDelete(let id):
+            undoDeleteNote(id)
+        case .add:
+            guard let itemID, let folder else { return action }
+            let captured = DigestNoteCapture.sources(
+                selected: cue.text,
+                hintIndex: 0,
+                cues: [DigestNoteSource(startTime: cue.startTime, text: cue.text)]
+            )
+            guard let source = captured.first else { return action }
+            let note = DigestNote(id: UUID(), time: source.startTime, text: source.text, createdAt: Date())
+            notes.insert(note, at: 0)
+            try? DigestNotesStore.save(notes, itemID: itemID, folder: folder)
+            editingCommentNoteID = note.id
+        }
+        return action
     }
 
     func explainSelection(
