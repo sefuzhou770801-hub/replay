@@ -2114,6 +2114,7 @@ private struct ChapterSidebar: View {
     @State private var highlightFilterScrollToken = 0
     @State private var tocExpanded = false
     @State private var bookWidth: CGFloat = 300
+    @StateObject private var highlightScrollLock = DigestScrollLock()
 
     private let autoFollowResumeDelay: TimeInterval = 4
     /// 超过该间隔的时间跳变视为 seek，立刻恢复高亮跟随。
@@ -2314,8 +2315,11 @@ private struct ChapterSidebar: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 8)
                             .background {
-                                SidePaneScrollActivityMonitor {
-                                    noteUserScroll()
+                                ZStack {
+                                    SidePaneScrollActivityMonitor {
+                                        noteUserScroll()
+                                    }
+                                    DigestScrollLockMonitor(lock: highlightScrollLock)
                                 }
                                 .frame(width: 0, height: 0)
                             }
@@ -2381,12 +2385,23 @@ private struct ChapterSidebar: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
                     }
+                    if let note = digest.editingNote {
+                        DigestCommentBar(
+                            timeLabel: formatTime(note.time),
+                            sentence: DigestCueDisplay.lines(from: note.text).translation,
+                            draft: digest.commentDraft,
+                            onDraftChange: { digest.commentDraft = $0 },
+                            onSave: { digest.updateComment(noteID: note.id, comment: $0) },
+                            onCancel: { digest.cancelEditComment() }
+                        )
+                    }
                 }
             }
         }
     }
 
     private func toggleHighlightFilter() {
+        commitCommentDraftIfNeeded()
         if digest.showsHighlightsOnly {
             let stored = highlightFilterAnchorIndex
             digest.toggleHighlightFilter()
@@ -2431,10 +2446,11 @@ private struct ChapterSidebar: View {
             jumpToCue(index: index)
         case .explain:
             guard let index = resolvedKeyboardCueIndex() else { return }
+            commitCommentDraftIfNeeded()
             digest.explainCue(index: index, title: itemTitle, cues: displayCues)
         case .highlight:
             guard let index = resolvedKeyboardCueIndex() else { return }
-            digest.toggleHighlight(cue: displayCues[index])
+            toggleHighlight(for: displayCues[index])
         case .toggleHighlightsOnly:
             toggleHighlightFilter()
         }
@@ -2558,7 +2574,7 @@ private struct ChapterSidebar: View {
         let isCurrent = activeCueIndex == index
         let isHit = searchHits.contains(index)
         let isActiveHit = searchHits.indices.contains(searchActive) && searchHits[searchActive] == index
-        VStack(alignment: .leading, spacing: DigestCueDisplay.pairSpacing) {
+        VStack(alignment: .leading, spacing: 0) {
             DigestCueRow(
                 timeLabel: formatTime(cue.startTime),
                 cueText: cue.text,
@@ -2569,9 +2585,13 @@ private struct ChapterSidebar: View {
                 showsActions: hoveredCueIndex == index || focusedCueIndex == index,
                 onSeek: { jumpToCue(index: index) },
                 onExplain: {
+                    commitCommentDraftIfNeeded()
                     digest.explainCue(index: index, title: itemTitle, cues: displayCues)
                 },
-                onHighlight: { digest.toggleHighlight(cue: cue) },
+                onHighlight: { toggleHighlight(for: cue) },
+                highlightTitle: digest.isHighlighted(cue)
+                    ? DigestBookChrome.unhighlightTitle
+                    : DigestBookChrome.highlightTitle,
                 stacksActions: bookWidth <= DigestBookChrome.minColumnWidth + 0.5
             )
             .help("跳到这句")
@@ -2585,25 +2605,18 @@ private struct ChapterSidebar: View {
                 }
             }
 
-            if let note = digest.note(for: cue),
-               digest.editingCommentNoteID == note.id
-                || DigestNoteComment.shouldDisplay(note.comment)
-                || hoveredCueIndex == index
-                || focusedCueIndex == index {
+            if let note = digest.note(for: cue), DigestNoteComment.shouldDisplay(note.comment) {
                 DigestHighlightCommentRow(
                     text: note.comment ?? "",
-                    isEditing: digest.editingCommentNoteID == note.id,
-                    showPlaceholder: (hoveredCueIndex == index || focusedCueIndex == index)
-                        && digest.editingCommentNoteID != note.id
-                        && !DigestNoteComment.shouldDisplay(note.comment),
-                    onBeginEdit: { digest.beginEditComment(noteID: note.id) },
-                    onSave: { digest.updateComment(noteID: note.id, comment: $0) }
+                    onBeginEdit: { beginEditComment(noteID: note.id) }
                 )
+                .padding(.top, DigestBookChrome.commentFieldSpacing)
                 .padding(.leading, timeColumnWidth + 10)
             }
 
             if !digest.showsHighlightsOnly {
                 bookCueExplainBlock(index: index, cue: cue)
+                    .padding(.top, DigestCueDisplay.pairSpacing)
             }
         }
         .padding(.leading, 10)
@@ -2669,8 +2682,35 @@ private struct ChapterSidebar: View {
         }
     }
 
+    private func commitCommentDraftIfNeeded() {
+        digest.commitCommentDraft()
+    }
+
+    private func beginEditComment(noteID: UUID) {
+        if digest.editingCommentNoteID != noteID {
+            commitCommentDraftIfNeeded()
+        }
+        digest.beginEditComment(noteID: noteID)
+    }
+
+    /// 点划线：立刻标线，底部输入条覆盖，不重排字幕流。
+    private func toggleHighlight(for cue: VideoSubtitleCue) {
+        highlightScrollLock.freeze()
+        let existing = digest.note(for: cue)
+        if existing?.id == digest.editingCommentNoteID {
+            digest.toggleHighlight(cue: cue)
+        } else {
+            commitCommentDraftIfNeeded()
+            digest.toggleHighlight(cue: cue)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            highlightScrollLock.unfreeze()
+        }
+    }
+
     /// 点歌词条目：先按目标索引刷新高亮/滚动，再交给播放器 seek。
     private func jumpToCue(index: Int) {
+        commitCommentDraftIfNeeded()
         guard displayCues.indices.contains(index) else { return }
         let cue = displayCues[index]
         activeCueIndex = index

@@ -23,6 +23,7 @@ final class DigestSession: ObservableObject {
     @Published var persistMessage: String?
     @Published var showsHighlightsOnly = false
     @Published var editingCommentNoteID: UUID?
+    @Published var commentDraft = ""
     @Published var noteJustSaved = false
     @Published var explainNeedsRetry = false
     @Published var retryCueIndices: Set<Int> = []
@@ -99,6 +100,7 @@ final class DigestSession: ObservableObject {
         pendingAnnotationDeletions = [:]
         showsHighlightsOnly = false
         editingCommentNoteID = nil
+        commentDraft = ""
         noteJustSaved = false
         explainNeedsRetry = false
         explanationByCue = [:]
@@ -175,6 +177,22 @@ final class DigestSession: ObservableObject {
 
     func beginEditComment(noteID: UUID) {
         editingCommentNoteID = noteID
+        commentDraft = notes.first(where: { $0.id == noteID })?.comment ?? ""
+    }
+
+    func cancelEditComment() {
+        editingCommentNoteID = nil
+        commentDraft = ""
+    }
+
+    func commitCommentDraft() {
+        guard let id = editingCommentNoteID else { return }
+        updateComment(noteID: id, comment: commentDraft)
+    }
+
+    var editingNote: DigestNote? {
+        guard let id = editingCommentNoteID else { return nil }
+        return notes.first(where: { $0.id == id })
     }
 
     func updateComment(noteID: UUID, comment: String) {
@@ -184,6 +202,7 @@ final class DigestSession: ObservableObject {
         guard persistNotes(revertingTo: previous) else { return }
         if editingCommentNoteID == noteID {
             editingCommentNoteID = nil
+            commentDraft = ""
         }
     }
 
@@ -530,6 +549,7 @@ final class DigestSession: ObservableObject {
         switch action {
         case .requestDelete(let id):
             editingCommentNoteID = nil
+            commentDraft = ""
             requestDeleteNote(id)
         case .undoDelete(let id):
             undoDeleteNote(id)
@@ -545,6 +565,7 @@ final class DigestSession: ObservableObject {
             notes.insert(note, at: 0)
             if persistNotes(revertingTo: previous) {
                 editingCommentNoteID = note.id
+                commentDraft = ""
             }
         }
         return action

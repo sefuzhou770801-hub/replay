@@ -12,6 +12,7 @@ struct DigestSessionCheck {
             try checkAnnotationDeferredDelete()
             try checkSaveFailureReverts()
             try checkCorruptLoadDoesNotOverwrite()
+            try checkCommentCancelKeepsOriginal()
         }
         try await checkExplainProgressVisibleWithDelay()
         print("digest_session_check=passed")
@@ -278,6 +279,39 @@ struct DigestSessionCheck {
         precondition(session.persistMessage == DigestCopy.fileCorrupt)
         let after = try String(contentsOf: url, encoding: .utf8)
         precondition(after == "not-json", "损坏文件不得被覆盖")
+    }
+
+    @MainActor
+    private static func checkCommentCancelKeepsOriginal() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digest-comment-cancel-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let itemID = UUID()
+        let session = DigestSession()
+        session.apiKeyEnvironment = [:]
+        session.load(itemID: itemID, folder: folder)
+        let cue = VideoSubtitleCue(startTime: 6, endTime: 8, text: "Hello world.\n大家好。")
+        _ = session.toggleHighlight(cue: cue)
+        let id = session.notes[0].id
+        precondition(session.editingCommentNoteID == id, "划线后须进入批语编辑")
+        session.updateComment(noteID: id, comment: "留下")
+        precondition(session.notes[0].comment == "留下")
+        session.beginEditComment(noteID: id)
+        precondition(session.commentDraft == "留下", "重新打开须带出原文")
+        session.commentDraft = "改了又取消"
+        session.cancelEditComment()
+        precondition(session.editingCommentNoteID == nil, "取消后须退出编辑")
+        precondition(session.notes[0].comment == "留下", "取消不得改批语")
+        session.beginEditComment(noteID: id)
+        session.commentDraft = "新稿"
+        session.commitCommentDraft()
+        precondition(session.notes[0].comment == "新稿", "回车语义须保存草稿")
+        session.beginEditComment(noteID: id)
+        session.updateComment(noteID: id, comment: "   ")
+        precondition(session.notes[0].comment == nil, "空批语不得保存")
+        precondition(session.editingCommentNoteID == nil)
     }
 
     @MainActor

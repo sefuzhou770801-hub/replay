@@ -8,6 +8,7 @@ struct DigestHoverCheck {
         precondition(DigestBookChrome.annotationRadius == 8)
         precondition(DigestBookChrome.explainTitle == "解释")
         precondition(DigestBookChrome.highlightTitle == "划线")
+        precondition(DigestBookChrome.unhighlightTitle == "取消划线")
         precondition(DigestBookChrome.tocPlaceholder == "生成目录")
         precondition(DigestBookChrome.entryTitle(0) == "划线 0")
         precondition(DigestBookChrome.entryTitle(3) == "划线 3")
