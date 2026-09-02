@@ -30,6 +30,7 @@ struct DigestTOCCheck {
         precondition(!DigestTOCCopy.missingKeyHint.contains("defaults"))
         precondition(!DigestTOCCopy.missingKeyHint.contains("AnthropicAPIKey"))
         checkCompleteness()
+        checkLooseQuoteMatch()
     }
 
     private static func checkCompleteness() {
@@ -44,52 +45,86 @@ struct DigestTOCCheck {
             timestamp: "0:15",
             timestampSeconds: 15
         )
-        let quote1 = DigestKeyQuote(
-            quote: "Always measure twice",
-            translation: "始终量两次",
-            timestamp: "3:00",
-            timestampSeconds: 180
-        )
-        let quote2 = DigestKeyQuote(
-            quote: "That is the conclusion",
-            translation: "这就是结论",
-            timestamp: "5:20",
-            timestampSeconds: 320
-        )
         let complete = DigestOverviewPayload(
             chapters: [
                 DigestGeneratedChapter(title: "开场", timestamp: "0:00", timestampSeconds: 0, summary: "介绍问题", quote: quote0),
-                DigestGeneratedChapter(title: "方法", timestamp: "2:00", timestampSeconds: 120, summary: "讲做法", quote: quote1),
-                DigestGeneratedChapter(title: "结论", timestamp: "5:00", timestampSeconds: 300, summary: "收束观点", quote: quote2)
+                DigestGeneratedChapter(title: "方法", timestamp: "2:00", timestampSeconds: 120, summary: "讲做法"),
+                DigestGeneratedChapter(title: "结论", timestamp: "5:00", timestampSeconds: 300, summary: "收束观点")
             ],
             keyQuotes: [],
             source: .generated,
             durationSeconds: 400
         )
-        precondition(
-            DigestTOCCompleteness.isComplete(complete, cues: cues, duration: 400),
-            "末章覆盖后段、每章有概括与对得上的金句时必须完整"
-        )
-        var missingQuote = complete
-        missingQuote.chapters[1].quote = nil
-        precondition(!DigestTOCCompleteness.isComplete(missingQuote, cues: cues, duration: 400))
+        precondition(DigestTOCCompleteness.hasAllSummaries(complete), "缺金句仍算结构完整")
         var missingSummary = complete
         missingSummary.chapters[0].summary = "  "
-        precondition(!DigestTOCCompleteness.isComplete(missingSummary, cues: cues, duration: 400))
-        var earlyLast = complete
-        earlyLast.chapters[2].timestampSeconds = 100
-        precondition(
-            !DigestTOCCompleteness.isComplete(earlyLast, cues: cues, duration: 400),
-            "末章未覆盖后段不得算完整"
-        )
+        precondition(!DigestTOCCompleteness.hasAllSummaries(missingSummary), "概括缺失才算不完整")
+        let filled = DigestTOCCompleteness.fillingMissingSummaries(missingSummary)
+        precondition(filled.chapters[0].summary == DigestCopy.missingSummaryPlaceholder)
+        precondition(DigestTOCCompleteness.hasAllSummaries(filled), "占位后应能保存")
+
         var invented = complete
-        invented.chapters[1].quote = DigestKeyQuote(
+        invented.chapters[0].quote = DigestKeyQuote(
             quote: "this quote is not in the transcript",
-            translation: "捏造",
-            timestamp: "3:00",
-            timestampSeconds: 180
+            translation: "捏造的句子",
+            timestamp: "0:15",
+            timestampSeconds: 15
         )
-        precondition(!DigestTOCCompleteness.isComplete(invented, cues: cues, duration: 400))
+        let composed = DigestTOCComposer.compose(
+            skeleton: [],
+            ai: invented,
+            duration: 400,
+            cues: cues
+        )
+        precondition(composed.chapters[0].quote == nil, "匹配不上的金句须丢弃，不得判整份失败")
+        precondition(DigestTOCCompleteness.hasAllSummaries(composed))
+    }
+
+    private static func checkLooseQuoteMatch() {
+        precondition(
+            DigestQuoteNormalize.looselyMatches(
+                quote: "Hello, WORLD!",
+                translation: "",
+                cueText: "hello world"
+            ),
+            "去标点与大小写后应能子串匹配"
+        )
+        precondition(
+            DigestQuoteNormalize.looselyMatches(
+                quote: "Ｈｅｌｌｏ",
+                translation: "",
+                cueText: "hello"
+            ),
+            "全半角统一后应能匹配"
+        )
+        precondition(
+            DigestQuoteNormalize.looselyMatches(
+                quote: "not in the original",
+                translation: "大家好。",
+                cueText: "Hello world.\n大家好。"
+            ),
+            "译文匹配即可"
+        )
+        precondition(
+            !DigestQuoteNormalize.looselyMatches(
+                quote: "totally invented line",
+                translation: "完全捏造",
+                cueText: "Hello world.\n大家好。"
+            )
+        )
+        let cues = [
+            VideoSubtitleCue(startTime: 15, endTime: 18, text: "We wanted to think outside the box\n我们想跳出框框来想")
+        ]
+        let punctuated = DigestKeyQuote(
+            quote: "We wanted, to think outside the box!",
+            translation: "",
+            timestamp: "0:15",
+            timestampSeconds: 15
+        )
+        precondition(
+            DigestTOCComposer.quoteMatchesChapter(punctuated, range: 0..<30, cues: cues),
+            "带标点的金句应对上原文"
+        )
     }
 
     /// 有自带章节：目录章节数与自带章节一致，标题与时间码来自骨架，每章一句概括。

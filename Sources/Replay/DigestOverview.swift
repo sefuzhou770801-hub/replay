@@ -241,7 +241,7 @@ enum DigestOverviewPrompt {
             chapterRule = """
             You must provide:
             - Chapters with timestamps that COVER THE ENTIRE VIDEO from start to finish. This video runs until \(durationFormatted). Use your own judgment for how many chapters there should be and where the natural topic shifts happen. Make as many or as few as the content genuinely calls for. The only hard rule is COVERAGE: the chapters must span the whole timeline, and your LAST chapter MUST come after \(late). Do NOT stop partway through or cluster all the chapters near the beginning. The later parts of the video need chapters too.
-            - For each chapter: one-sentence summary in Simplified Chinese, and exactly one key quote from that chapter's transcript.
+            - For each chapter: one-sentence summary in Simplified Chinese, and optionally one key quote from that chapter's transcript.
             """
         } else {
             chapterRule = """
@@ -249,7 +249,7 @@ enum DigestOverviewPrompt {
 
             For each given chapter:
             - summary: one Simplified Chinese sentence
-            - exactly one key quote from that chapter's transcript
+            - optionally one key quote from that chapter's transcript
 
             \(skeletonBlock)
             """
@@ -312,7 +312,7 @@ enum DigestOverviewPrompt {
         - timestampSeconds: Convert to seconds (2:30 = 2*60+30 = 150)
         - NEVER use 0:00/0 unless the content actually starts at [0:00]
         - EVERY timestamp must exist in the transcript. Look it up!
-        - 每章必须有一句概括和一条金句。
+        - 每章必须有一句概括。金句可以没有；有金句时尽量贴近字幕原文。
         """
     }
 

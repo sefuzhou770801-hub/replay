@@ -175,7 +175,7 @@ final class DigestSession: ObservableObject {
         guard let index = notes.firstIndex(where: { $0.id == noteID }) else { return }
         let previous = notes
         notes[index].comment = DigestNoteComment.normalized(comment)
-        persistNotes(revertingTo: previous)
+        guard persistNotes(revertingTo: previous) else { return }
         if editingCommentNoteID == noteID {
             editingCommentNoteID = nil
         }
@@ -271,7 +271,7 @@ final class DigestSession: ObservableObject {
         guard !noteJustSaved else { return nil }
         let noteCues = cues.map { DigestNoteSource(startTime: $0.startTime, text: $0.text) }
         let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !selected.isEmpty, let itemID, let folder else { return nil }
+        guard !selected.isEmpty else { return nil }
         let captured = DigestNoteCapture.sources(
             selected: selected,
             hintIndex: selectedCueIndex ?? 0,
@@ -286,20 +286,17 @@ final class DigestSession: ObservableObject {
             next.insert(note, at: 0)
             last = note
         }
-        do {
-            try DigestNotesStore.save(next, itemID: itemID, folder: folder)
-            notes = next
-            noteJustSaved = true
-            noteSavedTask?.cancel()
-            noteSavedTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                guard !Task.isCancelled else { return }
-                self?.noteJustSaved = false
-            }
-            return last
-        } catch {
-            return nil
+        let previous = notes
+        notes = next
+        guard persistNotes(revertingTo: previous) else { return nil }
+        noteJustSaved = true
+        noteSavedTask?.cancel()
+        noteSavedTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            self?.noteJustSaved = false
         }
+        return last
     }
 
     func requestDeleteNote(_ id: UUID) {
@@ -355,6 +352,26 @@ final class DigestSession: ObservableObject {
             if let previous {
                 notes = previous
             }
+            persistMessage = DigestCopy.saveFailed
+            return false
+        }
+    }
+
+    @discardableResult
+    private func persistOverview(
+        _ record: DigestOverviewRecord,
+        revertingTo previous: DigestOverviewPayload?
+    ) -> Bool {
+        guard let itemID, let folder else { return false }
+        do {
+            try DigestOverviewStore.save(record, itemID: itemID, folder: folder)
+            overview = record.payload
+            if persistMessage == DigestCopy.saveFailed {
+                persistMessage = nil
+            }
+            return true
+        } catch {
+            overview = previous
             persistMessage = DigestCopy.saveFailed
             return false
         }
@@ -418,7 +435,7 @@ final class DigestSession: ObservableObject {
             overviewMessage = DigestCopy.noSubtitles
             return
         }
-        guard let itemID, let folder else { return }
+        guard self.itemID != nil, self.folder != nil else { return }
 
         let resolvedDuration = DigestOverviewPrompt.resolvedDuration(itemDuration: duration, cues: cues)
         let transcript = DigestOverviewPrompt.timestampedTranscript(from: cues)
@@ -460,35 +477,28 @@ final class DigestSession: ObservableObject {
                         duration: resolvedDuration,
                         cues: cues
                     )
-                    if DigestTOCCompleteness.isComplete(
-                        payload,
-                        cues: cues,
-                        duration: resolvedDuration
-                    ) {
-                        accepted = payload
+                    guard !payload.chapters.isEmpty else { continue }
+                    accepted = payload
+                    if DigestTOCCompleteness.hasAllSummaries(payload) {
                         break
                     }
                 }
-                guard let accepted else {
-                    self.overviewMessage = DigestCopy.tocIncomplete
+                guard var accepted else {
+                    self.overviewMessage = DigestCopy.requestFailed
                     self.isGeneratingOverview = false
                     return
                 }
+                accepted = DigestTOCCompleteness.fillingMissingSummaries(accepted)
                 let record = DigestOverviewRecord(
                     payload: accepted,
                     generatedAt: Date(),
                     model: provider.activeModel
                 )
-                do {
-                    try DigestOverviewStore.save(record, itemID: itemID, folder: folder)
-                } catch {
-                    self.persistMessage = DigestCopy.saveFailed
-                    self.isGeneratingOverview = false
-                    return
+                let previous = self.overview
+                if self.persistOverview(record, revertingTo: previous) {
+                    self.overviewMessage = nil
                 }
-                self.overview = accepted
                 self.isGeneratingOverview = false
-                self.overviewMessage = nil
             } catch {
                 guard !Task.isCancelled else { return }
                 self.isGeneratingOverview = false
