@@ -1160,12 +1160,28 @@ private struct VideoDetail: View {
             subtitleCues: subtitleTrack?.cues ?? [],
             qaEntries: visibleQAEntries,
             itemTitle: item.title,
+            itemAuthor: item.author,
+            itemDuration: item.duration,
             hasSubtitleSource: item.subtitleFileURL != nil || subtitleTrack != nil,
             currentTime: playback.currentTime,
+            isPlaying: playback.isPlaying,
             isPresented: chaptersPresented,
             digest: digest,
             toggle: toggleChapters,
-            selectCueTime: seekToTime
+            selectCueTime: seekToTime,
+            watchQAEnabled: isWatchQAEnabled,
+            onContinueAsk: { annotation in
+                PlaybackCommandCenter.shared.pause()
+                seekRequest = PlayerSeekRequest(time: annotation.time, shouldPlay: false)
+                store.updatePlaybackPosition(annotation.time, for: item.id)
+                applyPlaybackTimeOptimistically(annotation.time)
+                watchQA.present(
+                    prefill: DigestContinueAsk.question(
+                        sourceText: annotation.text,
+                        explanation: annotation.explanation
+                    )
+                )
+            }
         )
         .ignoresSafeArea(.container, edges: .top)
     }
@@ -2054,12 +2070,17 @@ private struct ChapterSidebar: View {
     let subtitleCues: [VideoSubtitleCue]
     let qaEntries: [WatchQAEntry]
     let itemTitle: String
+    let itemAuthor: String
+    let itemDuration: Double?
     let hasSubtitleSource: Bool
     let currentTime: Double
+    let isPlaying: Bool
     let isPresented: Bool
     @ObservedObject var digest: DigestSession
     let toggle: () -> Void
     let selectCueTime: (Double) -> Void
+    let watchQAEnabled: Bool
+    let onContinueAsk: (DigestAnnotation) -> Void
 
     @State private var activeCueIndex: Int?
     @State private var displayCues: [VideoSubtitleCue] = []
@@ -2077,6 +2098,7 @@ private struct ChapterSidebar: View {
     @State private var hoveredCueIndex: Int?
     @State private var highlightFilterAnchorIndex: Int?
     @State private var highlightFilterScrollToken = 0
+    @State private var tocExpanded = false
 
     private let autoFollowResumeDelay: TimeInterval = 4
     /// 超过该间隔的时间跳变视为 seek，立刻恢复高亮跟随。
@@ -2136,6 +2158,14 @@ private struct ChapterSidebar: View {
                 searchScrollToken &+= 1
             }
         }
+        .onChange(of: isPlaying) { playing in
+            if playing {
+                tocExpanded = false
+            }
+        }
+        .onChange(of: digest.overview) { _ in
+            tocExpanded = false
+        }
     }
 
     /// 时级视频的时间码是 h:mm:ss，按内容预留列宽，避免切换时整列推移。
@@ -2144,6 +2174,7 @@ private struct ChapterSidebar: View {
             || subtitleCues.contains { $0.startTime >= 3600 }
             || qaEntries.contains { $0.time >= 3600 }
             || digest.notes.contains { $0.time >= 3600 }
+            || digest.annotations.contains { $0.time >= 3600 }
         return needsHours ? 64 : 52
     }
 
@@ -2196,7 +2227,20 @@ private struct ChapterSidebar: View {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: DigestCueDisplay.blockSpacing) {
                                 if !displayCues.isEmpty && !digest.showsHighlightsOnly {
-                                    DigestTOCPlaceholder()
+                                    DigestTOCBanner(
+                                        toc: digest.overview,
+                                        isGenerating: digest.isGeneratingOverview,
+                                        message: digest.overviewMessage,
+                                        hasAPIKey: digest.hasAPIKey,
+                                        isExpanded: tocExpanded,
+                                        currentTime: currentTime,
+                                        timeColumnWidth: timeColumnWidth,
+                                        onToggleExpand: { tocExpanded.toggle() },
+                                        onGenerate: generateTOC,
+                                        onSeek: seekFromTOC
+                                    )
+                                    .onAppear(perform: autoGenerateTOCIfNeeded)
+                                    .onChange(of: subtitleCues) { _ in autoGenerateTOCIfNeeded() }
                                 }
                                 if !digest.showsHighlightsOnly {
                                     ForEach(qaInsertions.leading) { entry in
@@ -2254,14 +2298,29 @@ private struct ChapterSidebar: View {
                                             if digest.isExplainingCue(index) {
                                                 DigestExplainProgress()
                                                     .padding(.leading, timeColumnWidth + 10)
-                                            } else if digest.needsRetry(index) {
-                                                DigestExplainRetryBar {
-                                                    digest.explainCue(index: index, title: itemTitle, cues: displayCues)
-                                                }
-                                                .padding(.leading, timeColumnWidth + 10)
-                                            } else if let explanation = digest.explanation(for: index) {
-                                                DigestExplainBubble(text: explanation)
+                                            } else {
+                                                if let annotation = digest.annotation(for: cue) {
+                                                    DigestAnnotationCard(
+                                                        annotation: annotation,
+                                                        isCollapsed: digest.isAnnotationCollapsed(annotation.id),
+                                                        showsContinueAsk: DigestContinueAsk.isVisible(
+                                                            watchQAEnabled: watchQAEnabled
+                                                        ),
+                                                        onToggle: { digest.toggleAnnotationCollapsed(annotation.id) },
+                                                        onDelete: { digest.deleteAnnotation(annotation.id) },
+                                                        onContinueAsk: { onContinueAsk(annotation) }
+                                                    )
                                                     .padding(.leading, timeColumnWidth + 10)
+                                                } else if let explanation = digest.explanation(for: index) {
+                                                    DigestExplainBubble(text: explanation)
+                                                        .padding(.leading, timeColumnWidth + 10)
+                                                }
+                                                if digest.needsRetry(index) {
+                                                    DigestExplainRetryBar {
+                                                        digest.explainCue(index: index, title: itemTitle, cues: displayCues)
+                                                    }
+                                                    .padding(.leading, timeColumnWidth + 10)
+                                                }
                                             }
                                             if let message = digest.explainMessage(for: index) {
                                                 Text(message)
@@ -2436,6 +2495,33 @@ private struct ChapterSidebar: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(OpenMyChrome.hair)
         }
+    }
+
+    private func seekFromTOC(_ time: Double) {
+        selectCueTime(time)
+        if isPlaying {
+            tocExpanded = false
+        }
+    }
+
+    private func generateTOC() {
+        digest.generateOverview(
+            title: itemTitle,
+            author: itemAuthor,
+            duration: itemDuration,
+            cues: subtitleCues,
+            chapters: chapters
+        )
+    }
+
+    private func autoGenerateTOCIfNeeded() {
+        guard digest.shouldAutoGenerateOverview,
+              digest.hasAPIKey,
+              !subtitleCues.isEmpty,
+              digest.overview == nil,
+              !digest.isGeneratingOverview
+        else { return }
+        generateTOC()
     }
 
     /// 点歌词条目：先按目标索引刷新高亮/滚动，再交给播放器 seek。

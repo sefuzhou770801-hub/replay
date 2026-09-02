@@ -121,17 +121,22 @@ struct DigestBookToolbar: View {
 }
 
 struct DigestTOCPlaceholder: View {
+    var action: () -> Void = {}
+
     var body: some View {
-        HStack {
-            Text(DigestBookChrome.tocPlaceholder)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(OpenMyChrome.muted)
-            Spacer(minLength: 0)
+        Button(action: action) {
+            HStack {
+                Text(DigestBookChrome.tocPlaceholder)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(OpenMyChrome.muted)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .frame(minHeight: DigestBookChrome.minActionHit, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 6)
-        .frame(minHeight: DigestBookChrome.minActionHit, alignment: .leading)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(
