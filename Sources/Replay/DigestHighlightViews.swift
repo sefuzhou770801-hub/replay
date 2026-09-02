@@ -7,33 +7,53 @@ struct DigestHighlightCommentRow: View {
     var showPlaceholder = false
     var onBeginEdit: () -> Void = {}
     var onSave: (String) -> Void = { _ in }
+    var onCancel: () -> Void = {}
 
     var body: some View {
         if isEditing {
-            DigestHighlightCommentField(text: text, onSave: onSave)
+            DigestHighlightCommentField(text: text, onSave: onSave, onCancel: onCancel)
                 .frame(maxWidth: .infinity)
                 .frame(height: DigestBookChrome.commentFieldHeight)
                 .background(hitBackground)
                 .accessibilityLabel(DigestBookChrome.commentPlaceholder)
         } else if DigestNoteComment.shouldDisplay(text) {
-            Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(OpenMyChrome.muted)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onBeginEdit)
-                .background(hitBackground)
-                .accessibilityLabel(text)
+            savedRow
         } else if showPlaceholder {
             Text(DigestBookChrome.commentPlaceholder)
-                .font(.system(size: 12))
+                .font(.system(size: DigestBookChrome.commentSavedSize))
                 .foregroundStyle(OpenMyChrome.faint)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onBeginEdit)
                 .accessibilityLabel(DigestBookChrome.commentPlaceholder)
         }
+    }
+
+    private var savedRow: some View {
+        HStack(alignment: .center, spacing: 6) {
+            Text(text)
+                .font(.system(size: DigestBookChrome.commentSavedSize))
+                .foregroundStyle(OpenMyChrome.muted)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "pencil")
+                .font(.system(size: 10))
+                .foregroundStyle(OpenMyChrome.faint)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: DigestBookHitKey.self,
+                            value: ["comment-pen": proxy.frame(in: .named("digest-book-page"))]
+                        )
+                    }
+                )
+                .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onBeginEdit)
+        .background(hitBackground)
+        .accessibilityLabel(text)
+        .accessibilityHint("编辑批语")
     }
 
     private var hitBackground: some View {
@@ -48,13 +68,17 @@ struct DigestHighlightCommentRow: View {
 
 final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
     let field = NSTextField(string: "")
+    let hintLabel = NSTextField(labelWithString: DigestBookChrome.commentHintIdle)
     var onSave: (String) -> Void = { _ in }
+    var onCancel: () -> Void = {}
     var parentText = ""
+    private var didCommit = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         applyChrome(focused: false)
+
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -67,7 +91,20 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         field.delegate = self
+
+        hintLabel.isEditable = false
+        hintLabel.isSelectable = false
+        hintLabel.isBordered = false
+        hintLabel.drawsBackground = false
+        hintLabel.font = NSFont.systemFont(ofSize: DigestBookChrome.commentHintSize)
+        hintLabel.textColor = OpenMyChrome.nsFaint
+        hintLabel.alignment = .right
+        hintLabel.lineBreakMode = .byTruncatingTail
+
         addSubview(field)
+        addSubview(hintLabel)
+        applyPlaceholder()
+        refreshHint()
     }
 
     required init?(coder: NSCoder) {
@@ -77,7 +114,21 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
     override func layout() {
         super.layout()
         let pad = DigestBookChrome.commentFieldPadding
-        field.frame = bounds.insetBy(dx: pad, dy: 0)
+        let gap: CGFloat = 8
+        let hintSize = hintLabel.intrinsicContentSize
+        let hintWidth = min(max(hintSize.width, 1), max(0, bounds.width - pad * 2 - 40))
+        hintLabel.frame = NSRect(
+            x: bounds.width - pad - hintWidth,
+            y: 0,
+            width: hintWidth,
+            height: bounds.height
+        )
+        field.frame = NSRect(
+            x: pad,
+            y: 0,
+            width: max(0, hintLabel.frame.minX - gap - pad),
+            height: bounds.height
+        )
     }
 
     func applyChrome(focused: Bool) {
@@ -88,20 +139,43 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
         layer?.borderColor = (focused ? OpenMyChrome.nsRowSelectedStroke : OpenMyChrome.nsFieldBorder).cgColor
     }
 
+    func applyPlaceholder() {
+        field.placeholderAttributedString = NSAttributedString(
+            string: DigestBookChrome.commentPlaceholder,
+            attributes: [
+                .foregroundColor: OpenMyChrome.nsFaint,
+                .font: NSFont.systemFont(ofSize: 12)
+            ]
+        )
+    }
+
+    func refreshHint() {
+        hintLabel.stringValue = field.stringValue.isEmpty
+            ? DigestBookChrome.commentHintIdle
+            : DigestBookChrome.commentHintTyping
+        needsLayout = true
+    }
+
     func control(
         _ control: NSControl,
         textView: NSTextView,
         doCommandBy commandSelector: Selector
     ) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            didCommit = true
             onSave(control.stringValue)
             return true
         }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            onSave(parentText)
+            didCommit = true
+            onCancel()
             return true
         }
         return false
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        refreshHint()
     }
 
     func controlTextDidBeginEditing(_ obj: Notification) {
@@ -110,20 +184,24 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
 
     func controlTextDidEndEditing(_ obj: Notification) {
         applyChrome(focused: false)
-        onSave(field.stringValue)
+        if didCommit { return }
+        onCancel()
     }
 }
 
 struct DigestHighlightCommentField: NSViewRepresentable {
     var text: String
     var onSave: (String) -> Void
+    var onCancel: () -> Void = {}
 
     func makeNSView(context: Context) -> DigestCommentFieldView {
         let view = DigestCommentFieldView(frame: .zero)
         view.field.stringValue = text
         view.parentText = text
         view.onSave = onSave
-        applyPlaceholder(to: view.field)
+        view.onCancel = onCancel
+        view.applyPlaceholder()
+        view.refreshHint()
         DispatchQueue.main.async {
             let scroll = view.enclosingScrollView
             let clip = scroll?.contentView
@@ -140,20 +218,12 @@ struct DigestHighlightCommentField: NSViewRepresentable {
     func updateNSView(_ view: DigestCommentFieldView, context: Context) {
         view.parentText = text
         view.onSave = onSave
-        applyPlaceholder(to: view.field)
+        view.onCancel = onCancel
+        view.applyPlaceholder()
         if view.field.currentEditor() == nil, view.field.stringValue != text {
             view.field.stringValue = text
+            view.refreshHint()
         }
-    }
-
-    private func applyPlaceholder(to field: NSTextField) {
-        field.placeholderAttributedString = NSAttributedString(
-            string: DigestBookChrome.commentPlaceholder,
-            attributes: [
-                .foregroundColor: OpenMyChrome.nsFaint,
-                .font: NSFont.systemFont(ofSize: 12)
-            ]
-        )
     }
 }
 

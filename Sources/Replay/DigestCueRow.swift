@@ -43,6 +43,11 @@ struct DigestCueRow: View {
                 cueTextBlock
                     .padding(.trailing, showsActions && !stacksActions ? DigestBookChrome.actionReserveWidth : 0)
             }
+            .overlay(alignment: .leading) {
+                if isHighlighted {
+                    HighlightSentenceMark()
+                }
+            }
             if showsActions && stacksActions {
                 DigestCueActionButtons(
                     onExplain: onExplain,
@@ -58,14 +63,6 @@ struct DigestCueRow: View {
                     onExplain: onExplain,
                     onHighlight: onHighlight
                 )
-            }
-        }
-        .overlay(alignment: .leading) {
-            if isHighlighted {
-                RoundedRectangle(cornerRadius: 1, style: .continuous)
-                    .fill(OpenMyChrome.ink)
-                    .frame(width: DigestBookChrome.highlightMarkWidth)
-                    .padding(.vertical, 2)
             }
         }
     }
@@ -103,6 +100,30 @@ struct DigestCueRow: View {
                 )
             }
         )
+    }
+}
+
+private struct HighlightSentenceMark: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let page = proxy.frame(in: .named("digest-book-page"))
+            let height = max(0, proxy.size.height - 4)
+            let rect = CGRect(
+                x: page.minX,
+                y: page.minY + 2,
+                width: DigestBookChrome.highlightMarkWidth,
+                height: height
+            )
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(OpenMyChrome.ink)
+                .frame(width: DigestBookChrome.highlightMarkWidth, height: height)
+                .offset(y: 2)
+                .preference(
+                    key: DigestBookHitKey.self,
+                    value: ["highlight-mark": rect]
+                )
+        }
+        .frame(width: DigestBookChrome.highlightMarkWidth)
     }
 }
 

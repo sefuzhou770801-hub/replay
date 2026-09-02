@@ -177,6 +177,10 @@ final class DigestSession: ObservableObject {
         editingCommentNoteID = noteID
     }
 
+    func cancelEditComment() {
+        editingCommentNoteID = nil
+    }
+
     func updateComment(noteID: UUID, comment: String) {
         guard let index = notes.firstIndex(where: { $0.id == noteID }) else { return }
         let previous = notes

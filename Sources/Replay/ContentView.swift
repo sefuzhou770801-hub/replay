@@ -2562,7 +2562,8 @@ private struct ChapterSidebar: View {
         let isCurrent = activeCueIndex == index
         let isHit = searchHits.contains(index)
         let isActiveHit = searchHits.indices.contains(searchActive) && searchHits[searchActive] == index
-        VStack(alignment: .leading, spacing: DigestCueDisplay.pairSpacing) {
+        let isEditingComment = digest.note(for: cue).map { digest.editingCommentNoteID == $0.id } ?? false
+        VStack(alignment: .leading, spacing: 0) {
             DigestCueRow(
                 timeLabel: formatTime(cue.startTime),
                 cueText: cue.text,
@@ -2570,7 +2571,7 @@ private struct ChapterSidebar: View {
                 isCurrent: isCurrent,
                 query: searchQuery,
                 isHighlighted: digest.isHighlighted(cue),
-                showsActions: hoveredCueIndex == index || focusedCueIndex == index,
+                showsActions: (hoveredCueIndex == index || focusedCueIndex == index) && !isEditingComment,
                 onSeek: { jumpToCue(index: index) },
                 onExplain: {
                     digest.explainCue(index: index, title: itemTitle, cues: displayCues)
@@ -2601,13 +2602,16 @@ private struct ChapterSidebar: View {
                         && digest.editingCommentNoteID != note.id
                         && !DigestNoteComment.shouldDisplay(note.comment),
                     onBeginEdit: { digest.beginEditComment(noteID: note.id) },
-                    onSave: { digest.updateComment(noteID: note.id, comment: $0) }
+                    onSave: { digest.updateComment(noteID: note.id, comment: $0) },
+                    onCancel: { digest.cancelEditComment() }
                 )
+                .padding(.top, DigestBookChrome.commentFieldSpacing)
                 .padding(.leading, timeColumnWidth + 10)
             }
 
             if !digest.showsHighlightsOnly {
                 bookCueExplainBlock(index: index, cue: cue)
+                    .padding(.top, DigestCueDisplay.pairSpacing)
             }
         }
         .padding(.leading, 10)

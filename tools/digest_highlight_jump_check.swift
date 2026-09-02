@@ -389,14 +389,15 @@ private struct JumpBookView: View {
     @ViewBuilder
     private func cueRow(index: Int) -> some View {
         let cue = model.cues[index]
-        VStack(alignment: .leading, spacing: DigestCueDisplay.pairSpacing) {
+        let isEditingComment = model.note(for: cue).map { model.editingCommentNoteID == $0.id } ?? false
+        VStack(alignment: .leading, spacing: 0) {
             DigestCueRow(
                 timeLabel: timeLabel(cue.startTime),
                 cueText: cue.text,
                 timeColumnWidth: DigestHighlightJumpCheck.timeColumnWidth,
                 isCurrent: model.currentIndex == index,
                 isHighlighted: model.isHighlighted(cue),
-                showsActions: model.hoveredIndex == index,
+                showsActions: model.hoveredIndex == index && !isEditingComment,
                 onHighlight: { model.toggleHighlight(at: index) }
             )
             if let note = model.note(for: cue),
@@ -410,8 +411,10 @@ private struct JumpBookView: View {
                         && model.editingCommentNoteID != note.id
                         && !DigestNoteComment.shouldDisplay(note.comment),
                     onBeginEdit: { model.editingCommentNoteID = note.id },
-                    onSave: { _ in }
+                    onSave: { _ in },
+                    onCancel: { model.editingCommentNoteID = nil }
                 )
+                .padding(.top, DigestBookChrome.commentFieldSpacing)
                 .padding(.leading, DigestHighlightJumpCheck.timeColumnWidth + 10)
             }
         }

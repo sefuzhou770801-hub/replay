@@ -12,8 +12,13 @@ enum DigestBookChrome {
     static let tocPlaceholder = "生成目录"
     static let explainingLabel = "稍等…"
     static let commentPlaceholder = "写一句批语"
-    static let commentFieldHeight: CGFloat = 26
-    static let commentFieldPadding: CGFloat = 8
+    static let commentHintIdle = "回车保存 · Esc 取消"
+    static let commentHintTyping = "回车保存"
+    static let commentFieldHeight: CGFloat = 28
+    static let commentFieldPadding: CGFloat = 10
+    static let commentFieldSpacing: CGFloat = 6
+    static let commentSavedSize: CGFloat = 11
+    static let commentHintSize: CGFloat = 10
     static let toolbarSpacing: CGFloat = 8
     static let headerHorizontalPadding: CGFloat = 12
     static let actionReserveWidth: CGFloat = 112
