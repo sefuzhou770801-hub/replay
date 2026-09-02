@@ -9,10 +9,12 @@ enum DigestBookChrome {
     static let annotationRadius: CGFloat = 8
     static let explainTitle = "解释"
     static let highlightTitle = "划线"
+    static let unhighlightTitle = "取消划线"
+    static let commentBarLabel = "批语"
     static let tocPlaceholder = "生成目录"
     static let explainingLabel = "稍等…"
     static let commentPlaceholder = "写一句批语"
-    static let commentHintIdle = "回车保存 · Esc 取消"
+    static let commentHintIdle = "回车保存 · Esc 只留划线"
     static let commentHintTyping = "回车保存"
     static let commentFieldHeight: CGFloat = 28
     static let commentFieldPadding: CGFloat = 10
@@ -44,10 +46,7 @@ enum DigestCommentHintLayout {
     }
 }
 
-enum DigestHighlightExpand {
-    static let duration: TimeInterval = 0.2
-    static let animation: Animation = .easeInOut(duration: duration)
-}
+
 
 /// 划线插入批语行时锁住列表滚动原点，避免输入框抢焦点把上方句子带走。
 final class DigestScrollLock: ObservableObject {

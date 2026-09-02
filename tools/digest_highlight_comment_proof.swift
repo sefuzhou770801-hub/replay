@@ -6,8 +6,9 @@ struct DigestHighlightCommentProof {
     static let fieldPath = "/tmp/digest-highlight-comment-field.png"
     static let typingPath = "/tmp/digest-highlight-comment-typing.png"
     static let savedPath = "/tmp/digest-highlight-comment-saved.png"
-    static let canvasWidth = 360
-    static let canvasHeight = 180
+    static let narrowPath = "/tmp/digest-highlight-comment-field-narrow.png"
+    static let wideWidth = 360
+    static let canvasHeight = 220
 
     @MainActor
     static func main() {
@@ -17,175 +18,117 @@ struct DigestHighlightCommentProof {
 
         precondition(DigestBookChrome.commentFieldHeight == 28)
         precondition(DigestBookChrome.commentFieldPadding == 10)
-        precondition(DigestBookChrome.commentFieldSpacing == 6)
         precondition(DigestBookChrome.commentPlaceholder == "写一句批语")
-        precondition(DigestBookChrome.commentHintIdle == "回车保存 · Esc 取消")
+        precondition(DigestBookChrome.commentHintIdle == "回车保存 · Esc 只留划线")
         precondition(DigestBookChrome.commentHintTyping == "回车保存")
-        precondition(DigestBookChrome.commentSavedSize == 11)
-        precondition(DigestBookChrome.commentHintSpacing == 10)
+        precondition(DigestBookChrome.commentBarLabel == "批语")
+        precondition(DigestBookChrome.unhighlightTitle == "取消划线")
 
-        let idleHint = DigestBookChrome.commentHintIdle
-        let typingHint = DigestBookChrome.commentHintTyping
-        let idleWidth = DigestCommentHintLayout.width(of: idleHint)
-        let typingWidth = DigestCommentHintLayout.width(of: typingHint)
-        let pads = DigestBookChrome.commentFieldPadding * 2
-        let hideIdleWidth = pads + idleWidth + DigestBookChrome.commentHintSpacing - 1
-        let showIdleWidth = pads + idleWidth + DigestBookChrome.commentHintSpacing + 1
-        precondition(
-            !DigestCommentHintLayout.shouldShow(columnWidth: hideIdleWidth, hint: idleHint),
-            "窄于提示全宽加 10 点间距须隐藏"
-        )
-        precondition(
-            DigestCommentHintLayout.shouldShow(columnWidth: showIdleWidth, hint: idleHint),
-            "够放下提示全宽加 10 点间距须显示"
-        )
-        precondition(
-            !DigestCommentHintLayout.shouldShow(
-                columnWidth: pads + typingWidth + DigestBookChrome.commentHintSpacing - 1,
-                hint: typingHint
-            ),
-            "输入中窄列须隐藏提示"
-        )
+        let empty = render(.emptyBar, width: wideWidth, path: fieldPath)
+        printMetrics(name: "输入条空态", result: empty)
+        assertBar(empty, expectedHint: DigestBookChrome.commentHintIdle, expectSaved: false)
 
-        let hiddenView = DigestCommentFieldView(
-            frame: NSRect(x: 0, y: 0, width: hideIdleWidth, height: DigestBookChrome.commentFieldHeight)
-        )
-        hiddenView.layout()
-        precondition(hiddenView.hintLabel.isHidden, "窄列布局须隐藏提示，不得截断")
-        precondition(
-            abs(hiddenView.field.frame.width - (hideIdleWidth - pads)) < 1,
-            "隐藏提示后输入区须占满内宽"
-        )
-
-        let empty = render(editing: true, comment: "", path: fieldPath)
-        printMetrics(name: "输入态", result: empty)
-        assertEditing(empty, expectedHint: DigestBookChrome.commentHintIdle)
-
-        let typing = render(editing: true, comment: "这句是关键", path: typingPath)
+        let typing = render(.typingBar, width: wideWidth, path: typingPath)
         printMetrics(name: "输入中", result: typing)
-        assertEditing(typing, expectedHint: DigestBookChrome.commentHintTyping)
+        assertBar(typing, expectedHint: DigestBookChrome.commentHintTyping, expectSaved: false)
 
-        let saved = render(editing: false, comment: "这句是关键", path: savedPath)
-        printMetrics(name: "已保存", result: saved)
+        let saved = render(.saved, width: wideWidth, path: savedPath)
+        printMetrics(name: "保存后文本行", result: saved)
         guard let savedComment = saved.hits["comment"] else {
             fatalError("digest_highlight_comment_proof: 已保存须画出文本行")
         }
         precondition(saved.hits["comment-pen"] != nil, "已保存须有笔形图标")
+        precondition(saved.hits["comment-bar"] == nil, "保存后不得保留输入条")
         precondition(
             savedComment.height + 0.5 < DigestBookChrome.commentFieldHeight,
             "已保存须是文本行，不得保留输入框高度：\(savedComment.height)"
         )
-        precondition(saved.fieldView == nil, "已保存不得保留输入框")
+
+        let narrow = render(
+            .emptyBar,
+            width: Int(DigestBookChrome.minColumnWidth),
+            path: narrowPath
+        )
+        printMetrics(name: "最窄栏宽输入条", result: narrow)
+        assertBar(narrow, expectedHint: DigestBookChrome.commentHintIdle, expectSaved: false)
+        if let bar = narrow.hits["comment-bar"] {
+            let trailing = CGFloat(Int(DigestBookChrome.minColumnWidth)) - bar.maxX
+            precondition(trailing <= 1, "最窄栏宽输入条须占满栏宽：trailing=\(trailing)")
+            precondition(bar.minX <= 0.5, "最窄栏宽输入条左缘须贴栏边：minX=\(bar.minX)")
+        }
 
         print(
-            "digest_highlight_comment_proof field=\(fieldPath) typing=\(typingPath) saved=\(savedPath)"
+            "digest_highlight_comment_proof field=\(fieldPath) typing=\(typingPath) saved=\(savedPath) narrow=\(narrowPath)"
         )
         print("digest_highlight_comment_proof=passed")
     }
 
+    enum ProofState {
+        case emptyBar
+        case typingBar
+        case saved
+    }
+
     @MainActor
-    private static func assertEditing(_ result: RenderResult, expectedHint: String) {
-        guard let comment = result.hits["comment"] else {
-            fatalError("digest_highlight_comment_proof: 编辑态须画出输入框")
+    private static func assertBar(
+        _ result: RenderResult,
+        expectedHint: String,
+        expectSaved: Bool
+    ) {
+        guard let bar = result.hits["comment-bar"] else {
+            fatalError("digest_highlight_comment_proof: 须画出底部输入条")
         }
-        guard let cue = result.hits["cue-text"] else {
-            fatalError("digest_highlight_comment_proof: 须有句子正文")
-        }
-        guard let mark = result.hits["highlight-mark"] else {
-            fatalError("digest_highlight_comment_proof: 须有划线竖线")
+        guard let caption = result.hits["comment-bar-caption"] else {
+            fatalError("digest_highlight_comment_proof: 须画出输入条第一行")
         }
         guard let fieldView = result.fieldView else {
             fatalError("digest_highlight_comment_proof: 找不到输入框视图")
         }
-
-        let chrome = fieldView.bounds
-        let inner = fieldView.field.frame
-        let hint = fieldView.hintLabel.frame
+        precondition(result.hits["comment"] == nil || expectSaved, "划线后未保存不得出现句内批语行")
+        precondition(bar.maxY <= CGFloat(canvasHeight) + 0.5, "输入条不得超出侧栏")
+        precondition(caption.minY + 0.5 >= bar.minY, "第一行须在输入条内")
         precondition(
-            abs(comment.height - DigestBookChrome.commentFieldHeight) < 1.5,
-            "输入框高度须为 28，实际 \(comment.height)"
+            abs(fieldView.bounds.height - DigestBookChrome.commentFieldHeight) < 1.5,
+            "输入框高度须为 28，实际 \(fieldView.bounds.height)"
         )
         precondition(
-            abs(inner.minX - DigestBookChrome.commentFieldPadding) < 1,
-            "左内边距须为 10，实际 \(inner.minX)"
+            abs(fieldView.field.frame.minX - DigestBookChrome.commentFieldPadding) < 1,
+            "左内边距须为 10，实际 \(fieldView.field.frame.minX)"
         )
-        let rightPad = chrome.width - hint.maxX
-        precondition(
-            abs(rightPad - DigestBookChrome.commentFieldPadding) < 1.5,
-            "右内边距须为 10，实际 \(rightPad)"
-        )
-        let spacing = comment.minY - cue.maxY
-        precondition(
-            abs(spacing - DigestBookChrome.commentFieldSpacing) < 2,
-            "与句子间距须为 6，实际 \(spacing)"
-        )
-        precondition(
-            mark.maxY <= comment.minY + 0.5,
-            "竖线不得延伸进输入框：mark.maxY=\(mark.maxY) comment.minY=\(comment.minY)"
-        )
-        precondition(
-            abs(comment.minX - cue.minX) < 2,
-            "输入框左缘须对齐正文列：comment=\(comment.minX) cue=\(cue.minX)"
-        )
-        precondition(
-            comment.width + 1 >= cue.width,
-            "输入框须占满正文列宽：comment=\(comment.width) cue=\(cue.width)"
-        )
+        let fill = hexString(fieldView.layer?.backgroundColor)
+        precondition(fill == "#1E1E1E", "底色须为 raise #1E1E1E，实际 \(fill)")
+        precondition(abs((fieldView.layer?.cornerRadius ?? -1) - 8) < 0.5, "圆角须为 8")
+        precondition(abs((fieldView.layer?.borderWidth ?? -1) - 1) < 0.1, "描边须为 1 点")
         precondition(
             fieldView.hintLabel.stringValue == expectedHint,
             "提示须为「\(expectedHint)」，实际「\(fieldView.hintLabel.stringValue)」"
         )
         let needed = DigestCommentHintLayout.width(of: expectedHint)
-        if DigestCommentHintLayout.shouldShow(columnWidth: chrome.width, hint: expectedHint) {
+        if DigestCommentHintLayout.shouldShow(columnWidth: fieldView.bounds.width, hint: expectedHint) {
             precondition(!fieldView.hintLabel.isHidden, "列宽足够时提示须完整显示")
             precondition(
                 fieldView.hintLabel.frame.width + 0.5 >= needed,
                 "提示不得截断：frame=\(fieldView.hintLabel.frame.width) 文本=\(needed)"
             )
-            precondition(
-                fieldView.hintLabel.lineBreakMode == .byClipping,
-                "提示不得用截断换行"
-            )
         } else {
             precondition(fieldView.hintLabel.isHidden, "列宽不足时提示须整体隐藏")
         }
-        precondition(result.hits["explain"] == nil, "编辑期间不得显示解释")
-        precondition(result.hits["highlight-action"] == nil, "编辑期间不得显示划线按钮")
-
-        let fill = hexString(fieldView.layer?.backgroundColor)
-        precondition(fill == "#1E1E1E", "底色须为 raise #1E1E1E，实际 \(fill)")
-        let radius = fieldView.layer?.cornerRadius ?? -1
-        precondition(abs(radius - OpenMyChrome.radiusSm) < 0.5, "圆角须为 8，实际 \(radius)")
-        let border = fieldView.layer?.borderWidth ?? -1
-        precondition(abs(border - 1) < 0.1, "描边须为 1 点，实际 \(border)")
     }
 
     @MainActor
     private static func printMetrics(name: String, result: RenderResult) {
-        let comment = result.hits["comment"]
-        let cue = result.hits["cue-text"]
-        let mark = result.hits["highlight-mark"]
         print("---- \(name) ----")
-        print("  comment=\(fmtRect(comment))")
-        print("  cue-text=\(fmtRect(cue))")
-        print("  highlight-mark=\(fmtRect(mark))")
-        if let comment, let cue {
-            print("  spacing=\(fmt(comment.minY - cue.maxY)) alignDx=\(fmt(comment.minX - cue.minX))")
-        }
-        if let comment, let mark {
-            print("  markY=\(fmt(mark.minY))..\(fmt(mark.maxY)) vs comment.minY=\(fmt(comment.minY))")
-        }
+        print("  comment-bar=\(fmtRect(result.hits["comment-bar"]))")
+        print("  caption=\(fmtRect(result.hits["comment-bar-caption"]))")
+        print("  comment=\(fmtRect(result.hits["comment"]))")
+        print("  cue-text=\(fmtRect(result.hits["cue-text"]))")
         if let fieldView = result.fieldView {
             print(
-                "  chrome=\(fmtNS(fieldView.frame)) field=\(fmtNS(fieldView.field.frame)) hint=\(fmtNS(fieldView.hintLabel.frame))"
+                "  chrome=\(fmtNS(fieldView.bounds)) field=\(fmtNS(fieldView.field.frame)) hint=\(fmtNS(fieldView.hintLabel.frame))"
             )
             print(
-                "  paddingLeft=\(fmt(fieldView.field.frame.minX)) paddingRight=\(fmt(fieldView.frame.width - fieldView.hintLabel.frame.maxX))"
+                "  fill=\(hexString(fieldView.layer?.backgroundColor)) border=\(hexString(fieldView.layer?.borderColor)) hiddenHint=\(fieldView.hintLabel.isHidden) hintText=\(fieldView.hintLabel.stringValue)"
             )
-            print(
-                "  fill=\(hexString(fieldView.layer?.backgroundColor)) border=\(hexString(fieldView.layer?.borderColor)) width=\(fmt(fieldView.layer?.borderWidth ?? 0)) radius=\(fmt(fieldView.layer?.cornerRadius ?? 0))"
-            )
-            print("  hintText=\(fieldView.hintLabel.stringValue)")
         }
         if let pen = result.hits["comment-pen"] {
             print("  comment-pen=\(fmtRect(pen))")
@@ -193,16 +136,12 @@ struct DigestHighlightCommentProof {
     }
 
     @MainActor
-    private static func render(editing: Bool, comment: String, path: String) -> RenderResult {
+    private static func render(_ state: ProofState, width: Int, path: String) -> RenderResult {
         let sink = CommentHitSink()
-        let root = DigestHighlightCommentProofView(
-            isEditing: editing,
-            comment: comment,
-            sink: sink
-        )
+        let root = DigestHighlightCommentProofView(state: state, canvasWidth: width, sink: sink)
         let hosting = NSHostingView(rootView: root)
         hosting.appearance = NSAppearance(named: .darkAqua)
-        let size = CGSize(width: canvasWidth, height: canvasHeight)
+        let size = CGSize(width: width, height: canvasHeight)
         hosting.frame = NSRect(origin: .zero, size: size)
         let window = OneXWindow(
             contentRect: hosting.frame,
@@ -230,7 +169,7 @@ struct DigestHighlightCommentProof {
         let bounds = NSRect(origin: .zero, size: size)
         let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: canvasWidth,
+            pixelsWide: width,
             pixelsHigh: canvasHeight,
             bitsPerSample: 8,
             samplesPerPixel: 4,
@@ -299,42 +238,49 @@ final class CommentHitSink {
 }
 
 private struct DigestHighlightCommentProofView: View {
-    let isEditing: Bool
-    let comment: String
+    let state: DigestHighlightCommentProof.ProofState
+    let canvasWidth: Int
     let sink: CommentHitSink
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            DigestBookToolbar(
-                query: "",
-                onQueryChange: { _ in },
-                matchCount: 0,
-                activeIndex: nil,
-                highlightCount: 1,
-                step: { _ in }
-            )
+        ZStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 0) {
-                DigestCueRow(
-                    timeLabel: "0:10",
-                    cueText: "Hello world.\n大家好。",
-                    timeColumnWidth: 52,
-                    isHighlighted: true,
-                    showsActions: false
+                DigestBookToolbar(
+                    query: "",
+                    onQueryChange: { _ in },
+                    matchCount: 0,
+                    activeIndex: nil,
+                    highlightCount: 1,
+                    step: { _ in }
                 )
-                DigestHighlightCommentRow(
-                    text: comment,
-                    isEditing: isEditing
-                )
-                .padding(.top, DigestBookChrome.commentFieldSpacing)
-                .padding(.leading, 62)
+                VStack(alignment: .leading, spacing: 0) {
+                    DigestCueRow(
+                        timeLabel: "0:10",
+                        cueText: "Hello world.\n大家好。",
+                        timeColumnWidth: 52,
+                        isHighlighted: true
+                    )
+                    if state == .saved {
+                        DigestHighlightCommentRow(text: "这句是关键")
+                            .padding(.top, DigestBookChrome.commentFieldSpacing)
+                            .padding(.leading, 62)
+                    }
+                }
+                .padding(.leading, 10)
+                .padding(.trailing, 14)
+                .padding(.vertical, DigestCueDisplay.rowVerticalPadding)
+                Spacer(minLength: 0)
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 14)
-            .padding(.vertical, DigestCueDisplay.rowVerticalPadding)
-            Spacer(minLength: 0)
+            if state != .saved {
+                DigestCommentBar(
+                    timeLabel: "0:10",
+                    sentence: DigestCueDisplay.lines(from: "Hello world.\n大家好。").translation,
+                    draft: state == .typingBar ? "这句是关键" : ""
+                )
+            }
         }
         .frame(
-            width: CGFloat(DigestHighlightCommentProof.canvasWidth),
+            width: CGFloat(canvasWidth),
             height: CGFloat(DigestHighlightCommentProof.canvasHeight),
             alignment: .top
         )

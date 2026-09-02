@@ -3,66 +3,106 @@ import SwiftUI
 
 struct DigestHighlightCommentRow: View {
     let text: String
-    var isEditing = false
-    var showPlaceholder = false
     var onBeginEdit: () -> Void = {}
+
+    var body: some View {
+        if DigestNoteComment.shouldDisplay(text) {
+            HStack(alignment: .center, spacing: 6) {
+                Text(text)
+                    .font(.system(size: DigestBookChrome.commentSavedSize))
+                    .foregroundStyle(OpenMyChrome.muted)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "pencil")
+                    .font(.system(size: 10))
+                    .foregroundStyle(OpenMyChrome.faint)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: DigestBookHitKey.self,
+                                value: ["comment-pen": proxy.frame(in: .named("digest-book-page"))]
+                            )
+                        }
+                    )
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onBeginEdit)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DigestBookHitKey.self,
+                        value: ["comment": proxy.frame(in: .named("digest-book-page"))]
+                    )
+                }
+            )
+            .accessibilityLabel(text)
+            .accessibilityHint("编辑批语")
+        }
+    }
+}
+
+struct DigestCommentBar: View {
+    let timeLabel: String
+    let sentence: String
+    let draft: String
+    var onDraftChange: (String) -> Void = { _ in }
     var onSave: (String) -> Void = { _ in }
     var onCancel: () -> Void = {}
 
     var body: some View {
-        if isEditing {
-            DigestHighlightCommentField(text: text, onSave: onSave, onCancel: onCancel)
-                .frame(maxWidth: .infinity)
-                .frame(height: DigestBookChrome.commentFieldHeight)
-                .background(hitBackground)
-                .accessibilityLabel(DigestBookChrome.commentPlaceholder)
-        } else if DigestNoteComment.shouldDisplay(text) {
-            savedRow
-        } else if showPlaceholder {
-            Text(DigestBookChrome.commentPlaceholder)
-                .font(.system(size: DigestBookChrome.commentSavedSize))
-                .foregroundStyle(OpenMyChrome.faint)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onBeginEdit)
-                .accessibilityLabel(DigestBookChrome.commentPlaceholder)
-        }
-    }
-
-    private var savedRow: some View {
-        HStack(alignment: .center, spacing: 6) {
-            Text(text)
-                .font(.system(size: DigestBookChrome.commentSavedSize))
-                .foregroundStyle(OpenMyChrome.muted)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "pencil")
-                .font(.system(size: 10))
-                .foregroundStyle(OpenMyChrome.faint)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: DigestBookHitKey.self,
-                            value: ["comment-pen": proxy.frame(in: .named("digest-book-page"))]
-                        )
-                    }
-                )
-                .accessibilityHidden(true)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onBeginEdit)
-        .background(hitBackground)
-        .accessibilityLabel(text)
-        .accessibilityHint("编辑批语")
-    }
-
-    private var hitBackground: some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: DigestBookHitKey.self,
-                value: ["comment": proxy.frame(in: .named("digest-book-page"))]
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(DigestBookChrome.commentBarLabel)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(OpenMyChrome.muted)
+                Text(timeLabel)
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(OpenMyChrome.faint)
+                Text(sentence)
+                    .font(.system(size: 10))
+                    .foregroundStyle(OpenMyChrome.faint)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DigestBookHitKey.self,
+                        value: ["comment-bar-caption": proxy.frame(in: .named("digest-book-page"))]
+                    )
+                }
             )
+            DigestHighlightCommentField(
+                text: draft,
+                onSave: onSave,
+                onCancel: onCancel,
+                onDraftChange: onDraftChange
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: DigestBookChrome.commentFieldHeight)
         }
+        .padding(.horizontal, DigestBookChrome.headerHorizontalPadding)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(OpenMyChrome.canvas)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(OpenMyChrome.hair)
+                .frame(height: 1)
+        }
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: DigestBookHitKey.self,
+                    value: ["comment-bar": proxy.frame(in: .named("digest-book-page"))]
+                )
+            }
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(DigestBookChrome.commentBarLabel)
     }
 }
 
@@ -71,6 +111,7 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
     let hintLabel = NSTextField(labelWithString: DigestBookChrome.commentHintIdle)
     var onSave: (String) -> Void = { _ in }
     var onCancel: () -> Void = {}
+    var onDraftChange: (String) -> Void = { _ in }
     var parentText = ""
     private var didCommit = false
 
@@ -187,6 +228,7 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) {
         refreshHint()
+        onDraftChange(field.stringValue)
     }
 
     func controlTextDidBeginEditing(_ obj: Notification) {
@@ -196,7 +238,7 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
     func controlTextDidEndEditing(_ obj: Notification) {
         applyChrome(focused: false)
         if didCommit { return }
-        onCancel()
+        onSave(field.stringValue)
     }
 }
 
@@ -204,6 +246,7 @@ struct DigestHighlightCommentField: NSViewRepresentable {
     var text: String
     var onSave: (String) -> Void
     var onCancel: () -> Void = {}
+    var onDraftChange: (String) -> Void = { _ in }
 
     func makeNSView(context: Context) -> DigestCommentFieldView {
         let view = DigestCommentFieldView(frame: .zero)
@@ -211,17 +254,11 @@ struct DigestHighlightCommentField: NSViewRepresentable {
         view.parentText = text
         view.onSave = onSave
         view.onCancel = onCancel
+        view.onDraftChange = onDraftChange
         view.applyPlaceholder()
         view.refreshHint()
         DispatchQueue.main.async {
-            let scroll = view.enclosingScrollView
-            let clip = scroll?.contentView
-            let origin = clip?.bounds.origin
             view.window?.makeFirstResponder(view.field)
-            if let scroll, let clip, let origin {
-                clip.scroll(to: origin)
-                scroll.reflectScrolledClipView(clip)
-            }
         }
         return view
     }
@@ -230,6 +267,7 @@ struct DigestHighlightCommentField: NSViewRepresentable {
         view.parentText = text
         view.onSave = onSave
         view.onCancel = onCancel
+        view.onDraftChange = onDraftChange
         view.applyPlaceholder()
         if view.field.currentEditor() == nil, view.field.stringValue != text {
             view.field.stringValue = text

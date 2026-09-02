@@ -25,34 +25,38 @@ struct DigestHighlightJumpCheck {
             name: "矮窗-点划线",
             cues: cues,
             height: shortHeight,
-            hoverAfter: .cleared,
+            hoverBefore: false,
+            hoverAfter: .held,
             scrollToCurrent: false
         )
-        assertStablePrefix(highlighted, name: "矮窗-点划线")
+        assertStableCues(highlighted, name: "矮窗-点划线")
+        assertScrollUnchanged(highlighted, name: "矮窗-点划线")
 
         let cancelled = run(
             name: "矮窗-取消划线",
             cues: cues,
             height: shortHeight,
-            hoverAfter: .cleared,
+            hoverBefore: false,
+            hoverAfter: .held,
             scrollToCurrent: false,
             extra: { model in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    model.toggleHighlight(at: targetIndex)
-                    model.hoveredIndex = nil
-                }
+                model.toggleHighlight(at: targetIndex)
+                model.hoveredIndex = nil
             }
         )
-        assertStablePrefix(cancelled, name: "矮窗-取消划线")
+        assertStableCues(cancelled, name: "矮窗-取消划线")
+        assertScrollUnchanged(cancelled, name: "矮窗-取消划线")
 
         let tall = run(
             name: "高窗-点划线",
             cues: cues,
             height: tallHeight,
+            hoverBefore: false,
             hoverAfter: .held,
             scrollToCurrent: false
         )
-        assertStablePrefix(tall, name: "高窗-点划线")
+        assertStableCues(tall, name: "高窗-点划线")
+        assertScrollUnchanged(tall, name: "高窗-点划线")
 
         print("digest_highlight_jump_check=passed")
     }
@@ -68,12 +72,17 @@ struct DigestHighlightJumpCheck {
         name: String,
         cues: [VideoSubtitleCue],
         height: Int,
+        hoverBefore: Bool,
         hoverAfter: HoverAfter,
         scrollToCurrent: Bool,
         extra: ((JumpModel) -> Void)? = nil
     ) -> (before: JumpSnapshot, after: JumpSnapshot) {
         let sink = JumpHitSink()
-        let model = JumpModel(cues: cues, currentIndex: targetIndex, hoveredIndex: targetIndex)
+        let model = JumpModel(
+            cues: cues,
+            currentIndex: targetIndex,
+            hoveredIndex: hoverBefore ? targetIndex : nil
+        )
         let hosting = makeHosting(model: model, sink: sink, height: height)
         let window = makeWindow(hosting: hosting, height: height)
         layout(hosting: hosting, window: window)
@@ -88,11 +97,9 @@ struct DigestHighlightJumpCheck {
         }
 
         let before = snapshot(from: sink, cues: cues, hosting: hosting, label: "before")
-        withAnimation(.easeInOut(duration: 0.2)) {
-            model.toggleHighlight(at: targetIndex)
-            if hoverAfter == .cleared {
-                model.hoveredIndex = nil
-            }
+        model.toggleHighlight(at: targetIndex)
+        if hoverAfter == .cleared {
+            model.hoveredIndex = nil
         }
         if scrollToCurrent {
             model.followScrollToken &+= 1
@@ -107,16 +114,17 @@ struct DigestHighlightJumpCheck {
         return (before, after)
     }
 
-    private static func assertStablePrefix(
+    private static func assertStableCues(
         _ result: (before: JumpSnapshot, after: JumpSnapshot),
         name: String
     ) {
-        for index in 0...targetIndex {
+        for index in result.before.pageYs.indices {
             let before = result.before.pageYs[index]
             let after = result.after.pageYs[index]
+            guard before.isFinite else { continue }
             precondition(
-                before.isFinite && after.isFinite,
-                "\(name) cue[\(index)] 须能测到 y：before=\(fmt(before)) after=\(fmt(after))"
+                after.isFinite,
+                "\(name) cue[\(index)] 划线后须仍能测到 y：before=\(fmt(before))"
             )
             let dy = after - before
             precondition(
@@ -124,6 +132,16 @@ struct DigestHighlightJumpCheck {
                 "\(name) cue[\(index)] 划线前后 y 差须为 0，实际 \(fmt(dy))（before=\(fmt(before)) after=\(fmt(after))）"
             )
         }
+    }
+
+    private static func assertScrollUnchanged(
+        _ result: (before: JumpSnapshot, after: JumpSnapshot),
+        name: String
+    ) {
+        precondition(
+            abs(result.after.scrollY - result.before.scrollY) < 0.5,
+            "\(name) 输入条出现后 contentOffset 须不变：before=\(fmt(result.before.scrollY)) after=\(fmt(result.after.scrollY))"
+        )
     }
 
     @MainActor
@@ -378,6 +396,14 @@ private struct JumpBookView: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
                 }
+                if let id = model.editingCommentNoteID,
+                   let note = model.notes.first(where: { $0.id == id }) {
+                    DigestCommentBar(
+                        timeLabel: timeLabel(note.time),
+                        sentence: DigestCueDisplay.lines(from: note.text).translation,
+                        draft: ""
+                    )
+                }
             }
         }
         .frame(width: CGFloat(canvasWidth), height: CGFloat(canvasHeight), alignment: .top)
@@ -389,7 +415,6 @@ private struct JumpBookView: View {
     @ViewBuilder
     private func cueRow(index: Int) -> some View {
         let cue = model.cues[index]
-        let isEditingComment = model.note(for: cue).map { model.editingCommentNoteID == $0.id } ?? false
         VStack(alignment: .leading, spacing: 0) {
             DigestCueRow(
                 timeLabel: timeLabel(cue.startTime),
@@ -397,25 +422,16 @@ private struct JumpBookView: View {
                 timeColumnWidth: DigestHighlightJumpCheck.timeColumnWidth,
                 isCurrent: model.currentIndex == index,
                 isHighlighted: model.isHighlighted(cue),
-                showsActions: model.hoveredIndex == index && !isEditingComment,
-                onHighlight: { model.toggleHighlight(at: index) }
+                showsActions: model.hoveredIndex == index,
+                onHighlight: { model.toggleHighlight(at: index) },
+                highlightTitle: model.isHighlighted(cue)
+                    ? DigestBookChrome.unhighlightTitle
+                    : DigestBookChrome.highlightTitle
             )
-            if let note = model.note(for: cue),
-               model.editingCommentNoteID == note.id
-                || DigestNoteComment.shouldDisplay(note.comment)
-                || model.hoveredIndex == index {
-                DigestHighlightCommentRow(
-                    text: note.comment ?? "",
-                    isEditing: model.editingCommentNoteID == note.id,
-                    showPlaceholder: model.hoveredIndex == index
-                        && model.editingCommentNoteID != note.id
-                        && !DigestNoteComment.shouldDisplay(note.comment),
-                    onBeginEdit: { model.editingCommentNoteID = note.id },
-                    onSave: { _ in },
-                    onCancel: { model.editingCommentNoteID = nil }
-                )
-                .padding(.top, DigestBookChrome.commentFieldSpacing)
-                .padding(.leading, DigestHighlightJumpCheck.timeColumnWidth + 10)
+            if let note = model.note(for: cue), DigestNoteComment.shouldDisplay(note.comment) {
+                DigestHighlightCommentRow(text: note.comment ?? "")
+                    .padding(.top, DigestBookChrome.commentFieldSpacing)
+                    .padding(.leading, DigestHighlightJumpCheck.timeColumnWidth + 10)
             }
         }
         .padding(.leading, 10)

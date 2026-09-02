@@ -299,9 +299,15 @@ struct DigestSessionCheck {
         session.updateComment(noteID: id, comment: "留下")
         precondition(session.notes[0].comment == "留下")
         session.beginEditComment(noteID: id)
+        precondition(session.commentDraft == "留下", "重新打开须带出原文")
+        session.commentDraft = "改了又取消"
         session.cancelEditComment()
         precondition(session.editingCommentNoteID == nil, "取消后须退出编辑")
         precondition(session.notes[0].comment == "留下", "取消不得改批语")
+        session.beginEditComment(noteID: id)
+        session.commentDraft = "新稿"
+        session.commitCommentDraft()
+        precondition(session.notes[0].comment == "新稿", "回车语义须保存草稿")
         session.beginEditComment(noteID: id)
         session.updateComment(noteID: id, comment: "   ")
         precondition(session.notes[0].comment == nil, "空批语不得保存")

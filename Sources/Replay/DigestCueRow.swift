@@ -34,6 +34,7 @@ struct DigestCueRow: View {
     var onSeek: () -> Void = {}
     var onExplain: () -> Void = {}
     var onHighlight: () -> Void = {}
+    var highlightTitle = DigestBookChrome.highlightTitle
     var stacksActions = false
 
     var body: some View {
@@ -51,7 +52,8 @@ struct DigestCueRow: View {
             if showsActions && stacksActions {
                 DigestCueActionButtons(
                     onExplain: onExplain,
-                    onHighlight: onHighlight
+                    onHighlight: onHighlight,
+                    highlightTitle: highlightTitle
                 )
                 .padding(.leading, timeColumnWidth + 10)
             }
@@ -61,7 +63,8 @@ struct DigestCueRow: View {
             if showsActions && !stacksActions {
                 DigestCueActionButtons(
                     onExplain: onExplain,
-                    onHighlight: onHighlight
+                    onHighlight: onHighlight,
+                    highlightTitle: highlightTitle
                 )
             }
         }
@@ -130,11 +133,12 @@ private struct HighlightSentenceMark: View {
 struct DigestCueActionButtons: View {
     var onExplain: () -> Void
     var onHighlight: () -> Void
+    var highlightTitle = DigestBookChrome.highlightTitle
 
     var body: some View {
         HStack(spacing: 4) {
             actionButton(title: DigestBookChrome.explainTitle, action: onExplain, hitKey: "explain")
-            actionButton(title: DigestBookChrome.highlightTitle, action: onHighlight, hitKey: "highlight-action")
+            actionButton(title: highlightTitle, action: onHighlight, hitKey: "highlight-action")
         }
         .accessibilityElement(children: .contain)
     }
