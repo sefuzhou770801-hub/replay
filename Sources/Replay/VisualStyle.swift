@@ -279,6 +279,8 @@ struct WindowStyleConfigurator: NSViewRepresentable {
         coordinator.scheduleSidebarToggleAlignment(in: window)
         coordinator.activationClickShield.attach(to: window)
         coordinator.windowFocusController.attach(to: window)
+        // 最小尺寸必须落在窗口上，不能写进 ContentView 的 frame。后者会在
+        // NavigationSplitView 展开左栏时把栏宽叠进 fittingSize，把内容撑出窗口。
         let minimumSize = NSSize(width: 980, height: 640)
         window.minSize = minimumSize
 
