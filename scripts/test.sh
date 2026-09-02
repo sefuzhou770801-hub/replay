@@ -153,6 +153,29 @@ compile_and_run digest_overview \
     "$project_dir/Sources/Replay/DigestOverview.swift" \
     "$project_dir/tools/digest_overview_check.swift"
 
+compile_and_run digest_toc \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/DigestOverview.swift" \
+    "$project_dir/Sources/Replay/DigestTOC.swift" \
+    "$project_dir/tools/digest_toc_check.swift"
+
+compile_and_run digest_toc_proof \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
+    "$project_dir/Sources/Replay/DigestTranscriptSearch.swift" \
+    "$project_dir/Sources/Replay/DigestCueDisplay.swift" \
+    "$project_dir/Sources/Replay/DigestExplainQuality.swift" \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/Sources/Replay/DigestBookChrome.swift" \
+    "$project_dir/Sources/Replay/DigestCueRow.swift" \
+    "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
+    "$project_dir/Sources/Replay/DigestOverview.swift" \
+    "$project_dir/Sources/Replay/DigestTOC.swift" \
+    "$project_dir/Sources/Replay/DigestTOCViews.swift" \
+    "$project_dir/tools/digest_toc_proof.swift"
+
 compile_and_run digest_api \
     "$project_dir/Sources/Replay/WatchItem.swift" \
     "$project_dir/Sources/Replay/ChapterMetadata.swift" \

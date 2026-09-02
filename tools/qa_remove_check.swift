@@ -17,10 +17,13 @@ struct QARemoveCheck {
 
         let id = UUID()
         let qaURL = WatchQAStore.fileURL(itemID: id, in: env.mediaFolder)
+        let digestURL = env.mediaFolder.appendingPathComponent("\(id.uuidString).digest.json")
         let videoURL = env.mediaFolder.appendingPathComponent("\(id.uuidString).mp4")
         try Data("[]".utf8).write(to: qaURL)
+        try Data("{\"schemaVersion\":3}".utf8).write(to: digestURL)
         try Data("video".utf8).write(to: videoURL)
         precondition(FileManager.default.fileExists(atPath: qaURL.path))
+        precondition(FileManager.default.fileExists(atPath: digestURL.path))
 
         let store = await MainActor.run {
             QueueStore(dataFile: env.dataFile, mediaFolder: env.mediaFolder)
@@ -30,6 +33,7 @@ struct QARemoveCheck {
         // deleteLocalFiles 里 actor deleteSidecar 是未等待的 Task，轮询到 qa.json 消失。
         try await waitUntilGone(qaURL)
         precondition(!FileManager.default.fileExists(atPath: qaURL.path), "remove 必须删除 qa.json（删除接线）")
+        precondition(!FileManager.default.fileExists(atPath: digestURL.path), "remove 必须删除目录 sidecar")
         precondition(!FileManager.default.fileExists(atPath: videoURL.path), "remove 必须删除视频文件")
     }
 
