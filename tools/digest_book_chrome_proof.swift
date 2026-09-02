@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 @main
-struct DigestTabsProof {
-    static let normalPath = "/tmp/digest-tabs-proof-normal.png"
-    static let narrowPath = "/tmp/digest-tabs-proof-narrow.png"
+struct DigestBookChromeProof {
+    static let normalPath = "/tmp/digest-book-chrome-normal.png"
+    static let narrowPath = "/tmp/digest-book-chrome-narrow.png"
     static let normalWidth: CGFloat = 300
     static let narrowWidth: CGFloat = 232
 
@@ -17,7 +17,7 @@ struct DigestTabsProof {
 
         render(width: normalWidth, path: normalPath)
         render(width: narrowWidth, path: narrowPath)
-        print("digest_tabs_proof=passed")
+        print("digest_book_chrome_proof=passed")
     }
 
     @MainActor
@@ -52,17 +52,17 @@ struct DigestTabsProof {
         guard let rep = makeBitmap(hosting: hosting, width: Int(width), height: Int(height)),
               let png = rep.representation(using: .png, properties: [:])
         else {
-            fatalError("digest_tabs_proof: 无法生成 \(path)")
+            fatalError("digest_book_chrome_proof: 无法生成 \(path)")
         }
         do {
             try png.write(to: URL(fileURLWithPath: path))
         } catch {
-            fatalError("digest_tabs_proof: 写 \(path) 失败 \(error)")
+            fatalError("digest_book_chrome_proof: 写 \(path) 失败 \(error)")
         }
 
         let hits = sink.hits
         guard let highlight = hits["highlight"] else {
-            fatalError("digest_tabs_proof: 缺少划线入口命中区 width=\(width)")
+            fatalError("digest_book_chrome_proof: 缺少划线入口命中区 width=\(width)")
         }
         precondition(
             highlight.height >= DigestBookChrome.minActionHit - 0.5,
@@ -78,7 +78,7 @@ struct DigestTabsProof {
             highlight.maxX <= width + 0.5 && highlight.minX >= -0.5,
             "划线入口超出栏宽 \(width)：\(highlight)"
         )
-        print("digest_tabs_proof width=\(Int(width)) highlight=\(Int(highlight.height))h/\(Int(highlight.width))w png=\(path)")
+        print("digest_book_chrome_proof width=\(Int(width)) highlight=\(Int(highlight.height))h/\(Int(highlight.width))w png=\(path)")
         window.close()
     }
 
@@ -94,7 +94,7 @@ struct DigestTabsProof {
                 includingPropertiesForKeys: nil
             )
         } catch {
-            fatalError("digest_tabs_proof: 读不到 Sources/Replay \(error)")
+            fatalError("digest_book_chrome_proof: 读不到 Sources/Replay \(error)")
         }
         let names = Set(files.map(\.lastPathComponent))
         precondition(!names.contains("DigestModeTabs.swift"), "页签模块不得留在分支")
