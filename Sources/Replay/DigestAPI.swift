@@ -193,7 +193,7 @@ enum DigestGeminiRequestBuilder {
 }
 
 enum DigestRequestBuilder {
-    static let missingKeyHint = "还没填密钥"
+    static let missingKeyHint = DigestCopy.missingKeyHint
     static var model: String { WatchQARequestBuilder.model }
     static var endpoint: URL { WatchQARequestBuilder.endpoint }
     static var anthropicVersion: String { WatchQARequestBuilder.anthropicVersion }
@@ -252,6 +252,15 @@ enum DigestRequestBuilder {
     }
 }
 
+typealias DigestCompleteFn = (
+    _ system: String,
+    _ user: String,
+    _ apiKey: String,
+    _ maxTokens: Int,
+    _ provider: DigestProviderKind,
+    _ temperature: Double?
+) async throws -> String
+
 enum DigestAPIClient {
     static func complete(
         system: String,
@@ -303,7 +312,7 @@ enum DigestAPIClient {
             maxTokens: maxTokens,
             temperature: temperature
         ) else {
-            throw DigestClientError(message: "这次没写成")
+            throw DigestClientError(message: DigestCopy.writeFailed)
         }
         request.httpBody = httpBody
         return try await send(request, session: session, extract: DigestRequestBuilder.text(fromResponse:))
@@ -326,7 +335,7 @@ enum DigestAPIClient {
             maxTokens: maxTokens,
             temperature: temperature
         ) else {
-            throw DigestClientError(message: "这次没写成")
+            throw DigestClientError(message: DigestCopy.writeFailed)
         }
         request.httpBody = httpBody
         return try await send(request, session: session, extract: DigestGeminiRequestBuilder.text(fromResponse:))
@@ -344,7 +353,7 @@ enum DigestAPIClient {
         guard let text = extract(data),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
-            throw DigestClientError(message: "这次没写成")
+            throw DigestClientError(message: DigestCopy.writeFailed)
         }
         return text
     }

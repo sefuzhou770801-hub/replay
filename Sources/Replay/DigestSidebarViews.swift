@@ -86,6 +86,7 @@ struct DigestBookToolbar: View {
                 activeIndex: activeIndex,
                 step: step
             )
+            .frame(minWidth: 0)
             Button(action: onHighlightFilter) {
                 Text(DigestBookChrome.entryTitle(highlightCount))
                     .font(.system(size: 12, weight: .medium))
@@ -229,6 +230,15 @@ struct DigestExplainProgress: View {
                 RoundedRectangle(cornerRadius: DigestBookChrome.annotationRadius, style: .continuous)
                     .strokeBorder(OpenMyChrome.hair)
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DigestBookHitKey.self,
+                        value: ["explain-progress": proxy.frame(in: .named("digest-book-page"))]
+                    )
+                }
+            )
+            .accessibilityLabel(DigestBookChrome.explainingLabel)
     }
 }
 

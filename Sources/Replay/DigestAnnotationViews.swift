@@ -43,6 +43,26 @@ struct DigestAnnotationCard: View {
     }
 
     private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            headerRow
+            VStack(alignment: .leading, spacing: 4) {
+                if showsContinueAsk {
+                    headerButton(
+                        title: DigestContinueAsk.title,
+                        action: onContinueAsk,
+                        hitKey: "continue-ask"
+                    )
+                }
+                HStack(spacing: 4) {
+                    Spacer(minLength: 0)
+                    toggleButton
+                    deleteButton
+                }
+            }
+        }
+    }
+
+    private var headerRow: some View {
         HStack(spacing: 4) {
             if showsContinueAsk {
                 headerButton(
@@ -52,17 +72,26 @@ struct DigestAnnotationCard: View {
                 )
             }
             Spacer(minLength: 0)
-            headerButton(
-                title: isCollapsed ? DigestAnnotationChrome.expandTitle : DigestAnnotationChrome.collapseTitle,
-                action: onToggle,
-                hitKey: "annotation-toggle"
-            )
-            headerButton(
-                title: DigestAnnotationChrome.deleteTitle,
-                action: onDelete,
-                hitKey: "annotation-delete"
-            )
+            toggleButton
+            deleteButton
         }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var toggleButton: some View {
+        headerButton(
+            title: isCollapsed ? DigestAnnotationChrome.expandTitle : DigestAnnotationChrome.collapseTitle,
+            action: onToggle,
+            hitKey: "annotation-toggle"
+        )
+    }
+
+    private var deleteButton: some View {
+        headerButton(
+            title: DigestAnnotationChrome.deleteTitle,
+            action: onDelete,
+            hitKey: "annotation-delete"
+        )
     }
 
     private func headerButton(

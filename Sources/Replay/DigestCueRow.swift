@@ -36,35 +36,15 @@ struct DigestCueRow: View {
     var onHighlight: () -> Void = {}
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Button(action: onSeek) {
-                Text(timeLabel)
-                    .font(.system(size: DigestCueDisplay.originalSize).monospacedDigit())
-                    .foregroundStyle(isCurrent ? OpenMyChrome.ink : OpenMyChrome.muted)
-                    .frame(width: timeColumnWidth, alignment: .trailing)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .alignmentGuide(.firstTextBaseline) { dimensions in
-                dimensions[.top] + DigestCueDisplay.timeBaselineFromTop
-            }
-
-            DigestCueText(
-                text: cueText,
-                query: query,
-                isCurrent: isCurrent,
-                onSeek: onSeek
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .alignmentGuide(.firstTextBaseline) { dimensions in
-                dimensions[.top] + DigestCueDisplay.firstLineBaselineFromTop
-            }
-
+        Group {
             if showsActions {
-                DigestCueActionButtons(
-                    onExplain: onExplain,
-                    onHighlight: onHighlight
-                )
+                ViewThatFits(in: .horizontal) {
+                    inlineRow(showsTrailingActions: true)
+                        .fixedSize(horizontal: true, vertical: false)
+                    stackedRow
+                }
+            } else {
+                inlineRow(showsTrailingActions: false)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,6 +55,58 @@ struct DigestCueRow: View {
                     .frame(width: DigestBookChrome.highlightMarkWidth)
                     .padding(.vertical, 2)
             }
+        }
+    }
+
+    private func inlineRow(showsTrailingActions: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            timeButton
+            cueTextBlock
+            if showsTrailingActions {
+                DigestCueActionButtons(
+                    onExplain: onExplain,
+                    onHighlight: onHighlight
+                )
+                .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+    }
+
+    private var stackedRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            inlineRow(showsTrailingActions: false)
+            DigestCueActionButtons(
+                onExplain: onExplain,
+                onHighlight: onHighlight
+            )
+            .padding(.leading, timeColumnWidth + 10)
+        }
+    }
+
+    private var timeButton: some View {
+        Button(action: onSeek) {
+            Text(timeLabel)
+                .font(.system(size: DigestCueDisplay.originalSize).monospacedDigit())
+                .foregroundStyle(isCurrent ? OpenMyChrome.ink : OpenMyChrome.muted)
+                .frame(width: timeColumnWidth, alignment: .trailing)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .alignmentGuide(.firstTextBaseline) { dimensions in
+            dimensions[.top] + DigestCueDisplay.timeBaselineFromTop
+        }
+    }
+
+    private var cueTextBlock: some View {
+        DigestCueText(
+            text: cueText,
+            query: query,
+            isCurrent: isCurrent,
+            onSeek: onSeek
+        )
+        .frame(minWidth: 64, maxWidth: .infinity, alignment: .leading)
+        .alignmentGuide(.firstTextBaseline) { dimensions in
+            dimensions[.top] + DigestCueDisplay.firstLineBaselineFromTop
         }
     }
 }

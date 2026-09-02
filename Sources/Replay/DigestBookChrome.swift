@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 enum DigestBookChrome {
+    static let minColumnWidth: CGFloat = 232
     static let minActionHit: CGFloat = 22
     static let highlightMarkWidth: CGFloat = 2
     static let annotationRadius: CGFloat = 8

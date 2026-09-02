@@ -74,7 +74,9 @@ struct DigestAPICheck {
     }
 
     private static func checkMissingKeyHint() {
-        precondition(DigestRequestBuilder.missingKeyHint == "还没填密钥")
+        precondition(DigestRequestBuilder.missingKeyHint == DigestCopy.missingKeyHint)
+        precondition(DigestRequestBuilder.missingKeyHint.contains("密钥"))
+        precondition(DigestRequestBuilder.missingKeyHint.contains("AnthropicAPIKey"))
         let empty = UserDefaults(suiteName: "digest-api-empty-\(UUID().uuidString)")!
         precondition(WatchQAAPIKey.resolve(defaults: empty, environment: [:]) == nil)
         precondition(DigestGeminiAPIKey.resolve(defaults: empty, environment: [:]) == nil)

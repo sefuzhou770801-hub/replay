@@ -26,6 +26,10 @@ final class DigestSession: ObservableObject {
     @Published var retryCueIndices: Set<Int> = []
     @Published var shouldAutoGenerateOverview = false
 
+    var apiKeyDefaults: UserDefaults = .standard
+    var apiKeyEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    var completeFn: DigestCompleteFn?
+
     private var itemID: UUID?
     private var folder: URL?
     private var explainTask: Task<Void, Never>?
@@ -34,7 +38,11 @@ final class DigestSession: ObservableObject {
     private var noteSavedTask: Task<Void, Never>?
 
     var hasAPIKey: Bool {
-        DigestAPIKey.resolve() != nil
+        DigestAPIKey.resolve(
+            provider: DigestProvider.resolve(defaults: apiKeyDefaults),
+            defaults: apiKeyDefaults,
+            environment: apiKeyEnvironment
+        ) != nil
     }
 
     func load(itemID: UUID, folder: URL) {
@@ -284,13 +292,17 @@ final class DigestSession: ObservableObject {
         chapters: [VideoChapter] = []
     ) {
         guard !isGeneratingOverview else { return }
-        let provider = DigestProvider.resolve()
-        guard let apiKey = DigestAPIKey.resolve(provider: provider) else {
-            overviewMessage = DigestTOCCopy.missingKeyHint
+        let provider = DigestProvider.resolve(defaults: apiKeyDefaults)
+        guard let apiKey = DigestAPIKey.resolve(
+            provider: provider,
+            defaults: apiKeyDefaults,
+            environment: apiKeyEnvironment
+        ) else {
+            overviewMessage = DigestCopy.missingKeyHint
             return
         }
         guard !cues.isEmpty else {
-            overviewMessage = "这段没有字幕"
+            overviewMessage = DigestCopy.noSubtitles
             return
         }
         guard let itemID, let folder else { return }
@@ -315,18 +327,20 @@ final class DigestSession: ObservableObject {
         shouldAutoGenerateOverview = false
         overviewTask?.cancel()
         overviewTask = Task { [weak self] in
+            guard let self else { return }
             do {
-                let text = try await DigestAPIClient.complete(
+                let text = try await self.complete(
                     system: system,
                     user: user,
                     apiKey: apiKey,
                     maxTokens: DigestRequestBuilder.overviewMaxTokens,
-                    provider: provider
+                    provider: provider,
+                    temperature: nil
                 )
                 guard !Task.isCancelled else { return }
                 guard let parsed = DigestOverviewCodec.parse(text) else {
-                    self?.overviewMessage = "这次没写成"
-                    self?.isGeneratingOverview = false
+                    self.overviewMessage = DigestCopy.writeFailed
+                    self.isGeneratingOverview = false
                     return
                 }
                 let payload = DigestTOCComposer.compose(
@@ -336,8 +350,8 @@ final class DigestSession: ObservableObject {
                     cues: cues
                 )
                 guard !payload.chapters.isEmpty else {
-                    self?.overviewMessage = "这次没写成"
-                    self?.isGeneratingOverview = false
+                    self.overviewMessage = DigestCopy.writeFailed
+                    self.isGeneratingOverview = false
                     return
                 }
                 let record = DigestOverviewRecord(
@@ -346,13 +360,13 @@ final class DigestSession: ObservableObject {
                     model: provider.activeModel
                 )
                 try DigestOverviewStore.save(record, itemID: itemID, folder: folder)
-                self?.overview = payload
-                self?.isGeneratingOverview = false
-                self?.overviewMessage = nil
+                self.overview = payload
+                self.isGeneratingOverview = false
+                self.overviewMessage = nil
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.isGeneratingOverview = false
-                self?.overviewMessage = error.localizedDescription
+                self.isGeneratingOverview = false
+                self.overviewMessage = error.localizedDescription
             }
         }
     }
@@ -400,12 +414,16 @@ final class DigestSession: ObservableObject {
         let selected = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !selected.isEmpty else { return }
         let cueIndex = selectedCueIndex ?? 0
-        let provider = DigestProvider.resolve()
-        guard let apiKey = DigestAPIKey.resolve(provider: provider) else {
+        let provider = DigestProvider.resolve(defaults: apiKeyDefaults)
+        guard let apiKey = DigestAPIKey.resolve(
+            provider: provider,
+            defaults: apiKeyDefaults,
+            environment: apiKeyEnvironment
+        ) else {
             explanation = nil
             explanationByCue[cueIndex] = nil
-            explainMessage = DigestRequestBuilder.missingKeyHint
-            explainMessageByCue[cueIndex] = DigestRequestBuilder.missingKeyHint
+            explainMessage = DigestCopy.missingKeyHint
+            explainMessageByCue[cueIndex] = DigestCopy.missingKeyHint
             retryCueIndices.remove(cueIndex)
             explainNeedsRetry = false
             return
@@ -423,8 +441,9 @@ final class DigestSession: ObservableObject {
         retryCueIndices.remove(cueIndex)
         explainTask?.cancel()
         explainTask = Task { [weak self] in
+            guard let self else { return }
             do {
-                let text = try await DigestAPIClient.complete(
+                let text = try await self.complete(
                     system: DigestExplainPrompt.systemPrompt,
                     user: DigestExplainPrompt.userText(videoTitle: title, passage: passage),
                     apiKey: apiKey,
@@ -433,38 +452,59 @@ final class DigestSession: ObservableObject {
                     temperature: DigestExplainPrompt.temperature
                 )
                 guard !Task.isCancelled else { return }
-                self?.isExplaining = false
-                self?.explainingCueIndex = nil
+                self.isExplaining = false
+                self.explainingCueIndex = nil
                 let trimmedAnswer = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 switch DigestExplainQuality.verdict(selected: selected, explanation: trimmedAnswer) {
                 case .ok:
-                    self?.explanation = nil
-                    self?.explanationByCue[cueIndex] = nil
-                    self?.recordAnnotation(
+                    self.explanation = nil
+                    self.explanationByCue[cueIndex] = nil
+                    self.recordAnnotation(
                         time: cueTime,
                         text: cueText,
                         explanation: trimmedAnswer,
                         model: provider.activeModel
                     )
-                    self?.explainNeedsRetry = false
-                    self?.retryCueIndices.remove(cueIndex)
-                    self?.explainMessage = nil
-                    self?.explainMessageByCue[cueIndex] = nil
+                    self.explainNeedsRetry = false
+                    self.retryCueIndices.remove(cueIndex)
+                    self.explainMessage = nil
+                    self.explainMessageByCue[cueIndex] = nil
                 case .empty, .tooShort, .unrelated:
-                    self?.explanation = nil
-                    self?.explanationByCue[cueIndex] = nil
-                    self?.explainNeedsRetry = true
-                    self?.retryCueIndices.insert(cueIndex)
-                    self?.explainMessage = nil
-                    self?.explainMessageByCue[cueIndex] = nil
+                    self.explanation = nil
+                    self.explanationByCue[cueIndex] = nil
+                    self.explainNeedsRetry = true
+                    self.retryCueIndices.insert(cueIndex)
+                    self.explainMessage = nil
+                    self.explainMessageByCue[cueIndex] = nil
                 }
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.isExplaining = false
-                self?.explainingCueIndex = nil
-                self?.explainMessage = error.localizedDescription
-                self?.explainMessageByCue[cueIndex] = error.localizedDescription
+                self.isExplaining = false
+                self.explainingCueIndex = nil
+                self.explainMessage = error.localizedDescription
+                self.explainMessageByCue[cueIndex] = error.localizedDescription
             }
         }
+    }
+
+    private func complete(
+        system: String,
+        user: String,
+        apiKey: String,
+        maxTokens: Int,
+        provider: DigestProviderKind,
+        temperature: Double?
+    ) async throws -> String {
+        if let completeFn {
+            return try await completeFn(system, user, apiKey, maxTokens, provider, temperature)
+        }
+        return try await DigestAPIClient.complete(
+            system: system,
+            user: user,
+            apiKey: apiKey,
+            maxTokens: maxTokens,
+            provider: provider,
+            temperature: temperature
+        )
     }
 }

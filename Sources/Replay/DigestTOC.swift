@@ -4,7 +4,7 @@ enum DigestTOCCopy {
     static let generateTitle = "生成目录"
     static let generatingLabel = "正在生成目录…"
     static let retryButtonTitle = "再试一次"
-    static let missingKeyHint = "还没填密钥。终端执行 defaults write com.mg.replay AnthropicAPIKey -string sk-…，或写入 GeminiAPIKey。"
+    static let missingKeyHint = DigestCopy.missingKeyHint
 
     static func collapsedTitle(chapterCount: Int, duration: Double) -> String {
         "目录 · \(chapterCount) 章 · \(DigestTimecode.format(duration))"

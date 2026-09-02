@@ -1005,7 +1005,7 @@ private struct VideoDetail: View {
             centerPane
                 .inspector(isPresented: $chaptersPresented) {
                     chapterSidebar
-                        .inspectorColumnWidth(min: 232, ideal: 300, max: 400)
+                        .inspectorColumnWidth(min: DigestBookChrome.minColumnWidth, ideal: 300, max: 400)
                 }
         } else {
             HSplitView {
@@ -1014,7 +1014,7 @@ private struct VideoDetail: View {
 
                 if chaptersPresented {
                     chapterSidebar
-                        .frame(minWidth: 232, idealWidth: 300, maxWidth: 400)
+                        .frame(minWidth: DigestBookChrome.minColumnWidth, idealWidth: 300, maxWidth: 400)
                 }
             }
         }
@@ -1156,6 +1156,7 @@ private struct VideoDetail: View {
 
     private var chapterSidebar: some View {
         ChapterSidebar(
+            itemID: item.id,
             chapters: item.availableChapters,
             subtitleCues: subtitleTrack?.cues ?? [],
             qaEntries: visibleQAEntries,
@@ -2066,6 +2067,7 @@ private struct PlayerControlButton: View {
 }
 
 private struct ChapterSidebar: View {
+    let itemID: UUID
     let chapters: [VideoChapter]
     let subtitleCues: [VideoSubtitleCue]
     let qaEntries: [WatchQAEntry]
@@ -2096,6 +2098,8 @@ private struct ChapterSidebar: View {
     @State private var searchActive = 0
     @State private var searchScrollToken = 0
     @State private var hoveredCueIndex: Int?
+    @State private var focusedCueIndex: Int?
+    @State private var focusScrollToken = 0
     @State private var highlightFilterAnchorIndex: Int?
     @State private var highlightFilterScrollToken = 0
     @State private var tocExpanded = false
@@ -2133,10 +2137,16 @@ private struct ChapterSidebar: View {
             displayCues = SubtitleSentenceBlocks.aggregate(subtitleCues)
             lastTrackedTime = currentTime
             refreshActiveCue(at: currentTime)
+            refreshDigestKeyboardAvailability()
         }
         .onDisappear {
             resumeFollowTask?.cancel()
             resumeFollowTask = nil
+            DigestCommandCenter.shared.bookAvailable = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .replayDigestKeyboard)) { note in
+            guard let action = note.object as? DigestKeyboardAction else { return }
+            applyDigestKeyboard(action)
         }
         .onChange(of: currentTime) { newTime in
             // 含暂停态 seek 的乐观时间更新：按目标时刻立刻重算高亮。
@@ -2165,6 +2175,26 @@ private struct ChapterSidebar: View {
         }
         .onChange(of: digest.overview) { _ in
             tocExpanded = false
+        }
+        .onChange(of: itemID) { _ in
+            searchQuery = ""
+            searchActive = 0
+            focusedCueIndex = nil
+            hoveredCueIndex = nil
+            tocExpanded = false
+            highlightFilterAnchorIndex = nil
+        }
+        .onChange(of: displayCues.count) { _ in
+            refreshDigestKeyboardAvailability()
+        }
+        .onChange(of: isPresented) { _ in
+            refreshDigestKeyboardAvailability()
+        }
+        .onChange(of: digest.showsHighlightsOnly) { _ in
+            focusedCueIndex = DigestKeyboardFocus.afterFilterChange(
+                focused: focusedCueIndex,
+                visible: visibleBookIndices
+            )
         }
     }
 
@@ -2203,14 +2233,14 @@ private struct ChapterSidebar: View {
 
     @ViewBuilder
     private var lyricsList: some View {
-        if subtitleCues.isEmpty && qaEntries.isEmpty {
+        if !DigestCopy.showsBook(cueCount: subtitleCues.count, qaCount: qaEntries.count) {
             sidePaneEmptyState(
-                title: "暂无字幕",
-                detail: hasSubtitleSource ? "字幕仍在加载，或文件无法解析。" : "当前视频没有可用字幕。"
+                title: DigestCopy.emptyTitle,
+                detail: DigestCopy.emptyDetail(hasSubtitleSource: hasSubtitleSource)
             )
         } else {
             VStack(alignment: .leading, spacing: 0) {
-                if !displayCues.isEmpty {
+                if DigestCopy.showsDigestActions(cueCount: displayCues.count) {
                     DigestBookToolbar(
                         query: searchQuery,
                         onQueryChange: { searchQuery = $0 },
@@ -2260,7 +2290,8 @@ private struct ChapterSidebar: View {
                                             isCurrent: isCurrent,
                                             query: searchQuery,
                                             isHighlighted: digest.isHighlighted(cue),
-                                            showsActions: hoveredCueIndex == index,
+                                            showsActions: hoveredCueIndex == index
+                                                || focusedCueIndex == index,
                                             onSeek: { jumpToCue(index: index) },
                                             onExplain: {
                                                 digest.explainCue(index: index, title: itemTitle, cues: displayCues)
@@ -2281,11 +2312,12 @@ private struct ChapterSidebar: View {
                                         if let note = digest.note(for: cue),
                                            digest.editingCommentNoteID == note.id
                                             || DigestNoteComment.shouldDisplay(note.comment)
-                                            || hoveredCueIndex == index {
+                                            || hoveredCueIndex == index
+                                            || focusedCueIndex == index {
                                             DigestHighlightCommentRow(
                                                 text: note.comment ?? "",
                                                 isEditing: digest.editingCommentNoteID == note.id,
-                                                showPlaceholder: hoveredCueIndex == index
+                                                showPlaceholder: (hoveredCueIndex == index || focusedCueIndex == index)
                                                     && digest.editingCommentNoteID != note.id
                                                     && !DigestNoteComment.shouldDisplay(note.comment),
                                                 onBeginEdit: { digest.beginEditComment(noteID: note.id) },
@@ -2343,6 +2375,9 @@ private struct ChapterSidebar: View {
                                         } else if isCurrent {
                                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                                 .fill(Color.primary.opacity(0.1))
+                                        } else if focusedCueIndex == index {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(OpenMyChrome.rowSelected)
                                         }
                                     }
                                     .id(index)
@@ -2401,6 +2436,11 @@ private struct ChapterSidebar: View {
                                 scrollToCue(target, proxy: proxy)
                             }
                         }
+                        .onChange(of: focusScrollToken) { _ in
+                            guard let focusedCueIndex,
+                                  visibleBookIndices.contains(focusedCueIndex) else { return }
+                            scrollToCue(focusedCueIndex, proxy: proxy)
+                        }
                     }
                     if let pendingID = digest.latestPendingDeletionID {
                         DigestNoteUndoBar {
@@ -2415,11 +2455,57 @@ private struct ChapterSidebar: View {
     }
 
     private func toggleHighlightFilter() {
-        highlightFilterAnchorIndex = hoveredCueIndex
+        highlightFilterAnchorIndex = focusedCueIndex
+            ?? hoveredCueIndex
             ?? activeCueIndex.flatMap { visibleBookIndices.contains($0) ? $0 : nil }
             ?? visibleBookIndices.first
         digest.toggleHighlightFilter()
         highlightFilterScrollToken &+= 1
+    }
+
+    private func refreshDigestKeyboardAvailability() {
+        DigestCommandCenter.shared.bookAvailable =
+            DigestCopy.showsDigestActions(cueCount: displayCues.count) && isPresented
+    }
+
+    private func applyDigestKeyboard(_ action: DigestKeyboardAction) {
+        switch action {
+        case .passThrough:
+            break
+        case .moveFocus(let delta):
+            focusedCueIndex = DigestKeyboardFocus.moving(
+                from: focusedCueIndex,
+                visible: visibleBookIndices,
+                delta: delta,
+                playing: activeCueIndex
+            )
+            if focusedCueIndex != nil {
+                focusScrollToken &+= 1
+            }
+        case .jump:
+            guard let index = resolvedKeyboardCueIndex() else { return }
+            jumpToCue(index: index)
+        case .explain:
+            guard let index = resolvedKeyboardCueIndex() else { return }
+            digest.explainCue(index: index, title: itemTitle, cues: displayCues)
+        case .highlight:
+            guard let index = resolvedKeyboardCueIndex() else { return }
+            digest.toggleHighlight(cue: displayCues[index])
+        case .toggleHighlightsOnly:
+            toggleHighlightFilter()
+        }
+    }
+
+    private func resolvedKeyboardCueIndex() -> Int? {
+        let index = DigestKeyboardFocus.resolved(
+            focused: focusedCueIndex,
+            visible: visibleBookIndices,
+            playing: activeCueIndex
+        )
+        if let index {
+            focusedCueIndex = index
+        }
+        return index
     }
 
     private func stepSearch(_ delta: Int) {

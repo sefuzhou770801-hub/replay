@@ -182,6 +182,7 @@ compile_and_run digest_overview \
 compile_and_run digest_toc \
     "$project_dir/Sources/Replay/WatchItem.swift" \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
     "$project_dir/Sources/Replay/DigestOverview.swift" \
     "$project_dir/Sources/Replay/DigestTOC.swift" \
     "$project_dir/tools/digest_toc_check.swift"
@@ -197,6 +198,7 @@ compile_and_run digest_toc_proof \
     "$project_dir/Sources/Replay/DigestBookChrome.swift" \
     "$project_dir/Sources/Replay/DigestCueRow.swift" \
     "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
     "$project_dir/Sources/Replay/DigestOverview.swift" \
     "$project_dir/Sources/Replay/DigestTOC.swift" \
     "$project_dir/Sources/Replay/DigestTOCViews.swift" \
@@ -207,9 +209,51 @@ compile_and_run digest_api \
     "$project_dir/Sources/Replay/ChapterMetadata.swift" \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
     "$project_dir/Sources/Replay/WatchQAContext.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
     "$project_dir/Sources/Replay/DigestOverview.swift" \
     "$project_dir/Sources/Replay/DigestAPI.swift" \
     "$project_dir/tools/digest_api_check.swift"
+
+compile_and_run digest_session \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/ChapterMetadata.swift" \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/WatchQAContext.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
+    "$project_dir/Sources/Replay/DigestOverview.swift" \
+    "$project_dir/Sources/Replay/DigestAPI.swift" \
+    "$project_dir/Sources/Replay/DigestNotes.swift" \
+    "$project_dir/Sources/Replay/DigestNoteUndo.swift" \
+    "$project_dir/Sources/Replay/DigestHighlightFilter.swift" \
+    "$project_dir/Sources/Replay/DigestAnnotations.swift" \
+    "$project_dir/Sources/Replay/DigestTOC.swift" \
+    "$project_dir/Sources/Replay/DigestExplainQuality.swift" \
+    "$project_dir/Sources/Replay/DigestSession.swift" \
+    "$project_dir/tools/digest_session_check.swift"
+
+compile_and_run digest_book_narrow_proof \
+    "$project_dir/Sources/Replay/WatchItem.swift" \
+    "$project_dir/Sources/Replay/ChapterMetadata.swift" \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
+    "$project_dir/Sources/Replay/DigestTranscriptSearch.swift" \
+    "$project_dir/Sources/Replay/DigestCueDisplay.swift" \
+    "$project_dir/Sources/Replay/DigestExplainQuality.swift" \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/Sources/Replay/DigestBookChrome.swift" \
+    "$project_dir/Sources/Replay/DigestCueRow.swift" \
+    "$project_dir/Sources/Replay/DigestSidebarViews.swift" \
+    "$project_dir/Sources/Replay/DigestCopy.swift" \
+    "$project_dir/Sources/Replay/DigestOverview.swift" \
+    "$project_dir/Sources/Replay/DigestTOC.swift" \
+    "$project_dir/Sources/Replay/DigestTOCViews.swift" \
+    "$project_dir/Sources/Replay/DigestAnnotations.swift" \
+    "$project_dir/Sources/Replay/DigestAnnotationViews.swift" \
+    "$project_dir/Sources/Replay/DigestNotes.swift" \
+    "$project_dir/Sources/Replay/DigestNoteUndo.swift" \
+    "$project_dir/Sources/Replay/DigestHighlightFilter.swift" \
+    "$project_dir/Sources/Replay/DigestHighlightViews.swift" \
+    "$project_dir/tools/digest_book_narrow_proof.swift"
 
 compile_and_run digest_book_states_proof \
     "$project_dir/Sources/Replay/VideoSubtitles.swift" \
@@ -244,6 +288,11 @@ compile_and_run keyboard_routing \
     "$project_dir/Sources/Replay/PlaybackKeyboardRouting.swift" \
     "$project_dir/Sources/Replay/PlaybackWindowFocusController.swift" \
     "$project_dir/tools/keyboard_routing_check.swift"
+
+compile_and_run digest_keyboard \
+    "$project_dir/Sources/Replay/PlaybackKeyboardRouting.swift" \
+    "$project_dir/Sources/Replay/DigestKeyboardRouting.swift" \
+    "$project_dir/tools/digest_keyboard_check.swift"
 
 compile_and_run sidebar_hittest \
     "$project_dir/Sources/Replay/OpenMyChrome.swift" \
