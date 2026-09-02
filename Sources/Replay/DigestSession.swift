@@ -47,6 +47,12 @@ final class DigestSession: ObservableObject {
         ) != nil
     }
 
+    /// 启动首选条目与切换视频共用：同一条目已加载则跳过。
+    func ensureLoaded(itemID: UUID, folder: URL) {
+        if self.itemID == itemID, self.folder == folder { return }
+        load(itemID: itemID, folder: folder)
+    }
+
     func load(itemID: UUID, folder: URL) {
         explainTask?.cancel()
         overviewTask?.cancel()

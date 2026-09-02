@@ -927,24 +927,18 @@ private struct VideoDetail: View {
             chapterLayout
         }
         .navigationTitle("")
-        .onAppear {
+        .task(id: item.id) {
             subtitleMode = SubtitleModeStore.mode(for: item.id)
-            // 重扫完成后再加载：异步路径落地后立刻用新路径热切，不依赖 onChange
+            watchQA.dismiss(resume: false)
+            loadQA(for: item.id)
+            digest.ensureLoaded(itemID: item.id, folder: store.mediaFolder)
             store.rescanLocalSubtitle(for: item.id) { path in
                 loadSubtitles(path: path)
             }
-            loadQA(for: item.id)
-            digest.load(itemID: item.id, folder: store.mediaFolder)
             collapseSidebarForNarrowChapterLayoutIfNeeded()
             PlaybackCommandCenter.shared.setAskOverlayDismissHandler { [watchQA] in
                 watchQA.dismiss()
             }
-        }
-        .onChange(of: item.id) { newID in
-            subtitleMode = SubtitleModeStore.mode(for: newID)
-            watchQA.dismiss(resume: false)
-            loadQA(for: newID)
-            digest.load(itemID: newID, folder: store.mediaFolder)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             store.rescanLocalSubtitle(for: item.id) { path in
@@ -1167,6 +1161,7 @@ private struct VideoDetail: View {
             currentTime: playback.currentTime,
             isPlaying: playback.isPlaying,
             isPresented: chaptersPresented,
+            mediaFolder: store.mediaFolder,
             digest: digest,
             toggle: toggleChapters,
             selectCueTime: seekToTime,
@@ -2091,6 +2086,7 @@ private struct ChapterSidebar: View {
     let currentTime: Double
     let isPlaying: Bool
     let isPresented: Bool
+    let mediaFolder: URL
     @ObservedObject var digest: DigestSession
     let toggle: () -> Void
     let selectCueTime: (Double) -> Void
@@ -2158,6 +2154,7 @@ private struct ChapterSidebar: View {
         )
         .onPreferenceChange(DigestBookWidthKey.self) { bookWidth = $0 }
         .onAppear {
+            digest.ensureLoaded(itemID: itemID, folder: mediaFolder)
             displayCues = SubtitleSentenceBlocks.aggregate(subtitleCues)
             lastTrackedTime = currentTime
             refreshActiveCue(at: currentTime)
@@ -2200,7 +2197,8 @@ private struct ChapterSidebar: View {
         .onChange(of: digest.overview) { _ in
             tocExpanded = false
         }
-        .onChange(of: itemID) { _ in
+        .onChange(of: itemID) { newID in
+            digest.ensureLoaded(itemID: newID, folder: mediaFolder)
             searchQuery = ""
             searchActive = 0
             focusedCueIndex = nil

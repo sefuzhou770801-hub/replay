@@ -6,6 +6,7 @@ struct DigestSessionCheck {
         checkEmptySurface()
         checkCopyIsProductVoice()
         try await MainActor.run {
+            try checkLaunchSelectionLoadsSidecars()
             try checkSwitchThreeVideosIsolated()
             checkMissingKeyHints()
             try checkAnnotationDeferredDelete()
@@ -59,6 +60,57 @@ struct DigestSessionCheck {
         precondition(!DigestCopy.missingKeyHint.contains("AnthropicAPIKey"))
         precondition(!DigestCopy.missingKeyHint.contains("GeminiAPIKey"))
         precondition(DigestCopy.viewConfigTitle == "查看配置方法")
+    }
+
+    @MainActor
+    private static func checkLaunchSelectionLoadsSidecars() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digest-launch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let itemID = UUID()
+        let note = DigestNote(id: UUID(), time: 6, text: "Hello world.\n大家好。", createdAt: Date(), comment: "启动批语")
+        let annotation = DigestAnnotation(
+            id: UUID(),
+            time: 6,
+            text: "Hello world.\n大家好。",
+            explanation: "启动批注",
+            createdAt: Date(),
+            model: "m"
+        )
+        try DigestNotesStore.save([note], itemID: itemID, folder: folder)
+        try DigestAnnotationsStore.save([annotation], itemID: itemID, folder: folder)
+        try DigestOverviewStore.save(
+            DigestOverviewRecord(
+                payload: DigestOverviewPayload(
+                    chapters: [
+                        DigestGeneratedChapter(
+                            title: "开场",
+                            timestamp: "0:00",
+                            timestampSeconds: 0,
+                            summary: "启动时就该看见"
+                        )
+                    ],
+                    keyQuotes: [],
+                    source: .videoChapters,
+                    durationSeconds: 19
+                ),
+                generatedAt: Date(),
+                model: "m"
+            ),
+            itemID: itemID,
+            folder: folder
+        )
+
+        let session = DigestSession()
+        session.apiKeyEnvironment = [:]
+        session.ensureLoaded(itemID: itemID, folder: folder)
+        precondition(session.notes.first?.comment == "启动批语", "启动首选条目必须加载划线")
+        precondition(session.annotations.first?.explanation == "启动批注", "启动首选条目必须加载批注")
+        precondition(session.overview?.chapters.first?.title == "开场", "启动首选条目必须加载目录")
+        session.ensureLoaded(itemID: itemID, folder: folder)
+        precondition(session.notes.first?.comment == "启动批语", "同一条目再次确保加载不得清空")
     }
 
     @MainActor

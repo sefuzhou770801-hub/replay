@@ -115,36 +115,81 @@ struct DigestCueActionButtons: View {
             actionButton(title: DigestBookChrome.explainTitle, action: onExplain, hitKey: "explain")
             actionButton(title: DigestBookChrome.highlightTitle, action: onHighlight, hitKey: "highlight-action")
         }
+        .accessibilityElement(children: .contain)
     }
 
     private func actionButton(title: String, action: @escaping () -> Void, hitKey: String) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(OpenMyChrome.ink)
-                .padding(.horizontal, 8)
-                .frame(minWidth: DigestBookChrome.minActionHit, minHeight: DigestBookChrome.minActionHit)
-                .contentShape(Rectangle())
+        let identifier = hitKey == "explain" ? "digest.explain" : "digest.highlight"
+        return DigestAppKitActionButton(title: title, identifier: identifier, action: action)
+            .padding(.horizontal, 8)
+            .frame(minWidth: DigestBookChrome.minActionHit, minHeight: DigestBookChrome.minActionHit)
+            .help(title)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DigestBookHitKey.self,
+                        value: [hitKey: proxy.frame(in: .named("digest-book-page"))]
+                    )
+                }
+            )
+    }
+}
+
+private struct DigestAppKitActionButton: NSViewRepresentable {
+    var title: String
+    var identifier: String
+    var action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: title, target: context.coordinator, action: #selector(Coordinator.click))
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.setButtonType(.momentaryPushIn)
+        button.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        button.contentTintColor = OpenMyChrome.nsInk
+        button.focusRingType = .none
+        button.setAccessibilityRole(.button)
+        button.setAccessibilityLabel(title)
+        button.setAccessibilityIdentifier(identifier)
+        button.setAccessibilityElement(true)
+        button.setAccessibilityHidden(false)
+        button.wantsLayer = true
+        button.layer?.backgroundColor = OpenMyChrome.nsRaise.cgColor
+        button.layer?.cornerRadius = OpenMyChrome.radiusSm
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = OpenMyChrome.nsHair.cgColor
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentHuggingPriority(.required, for: .vertical)
+        context.coordinator.button = button
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.action = action
+        if button.title != title {
+            button.title = title
+            button.setAccessibilityLabel(title)
         }
-        .buttonStyle(.plain)
-        .background(
-            OpenMyChrome.raise,
-            in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusSm, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: OpenMyChrome.radiusSm, style: .continuous)
-                .strokeBorder(OpenMyChrome.hair)
+        button.setAccessibilityIdentifier(identifier)
+        button.setAccessibilityHidden(false)
+        button.setAccessibilityElement(true)
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        weak var button: NSButton?
+
+        init(action: @escaping () -> Void) {
+            self.action = action
         }
-        .help(title)
-        .accessibilityLabel(title)
-        .background(
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: DigestBookHitKey.self,
-                    value: [hitKey: proxy.frame(in: .named("digest-book-page"))]
-                )
-            }
-        )
+
+        @objc func click() {
+            action()
+        }
     }
 }
 

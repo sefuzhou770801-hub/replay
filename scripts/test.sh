@@ -176,6 +176,16 @@ compile_and_run digest_hover_probe \
     "$project_dir/Sources/Replay/DigestCueRow.swift" \
     "$project_dir/tools/digest_hover_probe_check.swift"
 
+compile_and_run digest_hover_a11y \
+    "$project_dir/Sources/Replay/VideoSubtitles.swift" \
+    "$project_dir/Sources/Replay/SubtitleSentenceBlocks.swift" \
+    "$project_dir/Sources/Replay/DigestTranscriptSearch.swift" \
+    "$project_dir/Sources/Replay/DigestCueDisplay.swift" \
+    "$project_dir/Sources/Replay/OpenMyChrome.swift" \
+    "$project_dir/Sources/Replay/DigestBookChrome.swift" \
+    "$project_dir/Sources/Replay/DigestCueRow.swift" \
+    "$project_dir/tools/digest_hover_a11y_check.swift"
+
 compile_and_run digest_explain_quality \
     "$project_dir/Sources/Replay/DigestExplainQuality.swift" \
     "$project_dir/tools/digest_explain_quality_check.swift"
