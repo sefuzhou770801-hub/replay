@@ -1168,7 +1168,20 @@ private struct VideoDetail: View {
             isPresented: chaptersPresented,
             digest: digest,
             toggle: toggleChapters,
-            selectCueTime: seekToTime
+            selectCueTime: seekToTime,
+            watchQAEnabled: isWatchQAEnabled,
+            onContinueAsk: { annotation in
+                PlaybackCommandCenter.shared.pause()
+                seekRequest = PlayerSeekRequest(time: annotation.time, shouldPlay: false)
+                store.updatePlaybackPosition(annotation.time, for: item.id)
+                applyPlaybackTimeOptimistically(annotation.time)
+                watchQA.present(
+                    prefill: DigestContinueAsk.question(
+                        sourceText: annotation.text,
+                        explanation: annotation.explanation
+                    )
+                )
+            }
         )
         .ignoresSafeArea(.container, edges: .top)
     }
@@ -2066,6 +2079,8 @@ private struct ChapterSidebar: View {
     @ObservedObject var digest: DigestSession
     let toggle: () -> Void
     let selectCueTime: (Double) -> Void
+    let watchQAEnabled: Bool
+    let onContinueAsk: (DigestAnnotation) -> Void
 
     @State private var activeCueIndex: Int?
     @State private var displayCues: [VideoSubtitleCue] = []
@@ -2144,6 +2159,7 @@ private struct ChapterSidebar: View {
             || subtitleCues.contains { $0.startTime >= 3600 }
             || qaEntries.contains { $0.time >= 3600 }
             || digest.notes.contains { $0.time >= 3600 }
+            || digest.annotations.contains { $0.time >= 3600 }
         return needsHours ? 64 : 52
     }
 
@@ -2245,14 +2261,29 @@ private struct ChapterSidebar: View {
                                     if digest.isExplainingCue(index) {
                                         DigestExplainProgress()
                                             .padding(.leading, timeColumnWidth + 10)
-                                    } else if digest.needsRetry(index) {
-                                        DigestExplainRetryBar {
-                                            digest.explainCue(index: index, title: itemTitle, cues: displayCues)
-                                        }
-                                        .padding(.leading, timeColumnWidth + 10)
-                                    } else if let explanation = digest.explanation(for: index) {
-                                        DigestExplainBubble(text: explanation)
+                                    } else {
+                                        if let annotation = digest.annotation(for: cue) {
+                                            DigestAnnotationCard(
+                                                annotation: annotation,
+                                                isCollapsed: digest.isAnnotationCollapsed(annotation.id),
+                                                showsContinueAsk: DigestContinueAsk.isVisible(
+                                                    watchQAEnabled: watchQAEnabled
+                                                ),
+                                                onToggle: { digest.toggleAnnotationCollapsed(annotation.id) },
+                                                onDelete: { digest.deleteAnnotation(annotation.id) },
+                                                onContinueAsk: { onContinueAsk(annotation) }
+                                            )
                                             .padding(.leading, timeColumnWidth + 10)
+                                        } else if let explanation = digest.explanation(for: index) {
+                                            DigestExplainBubble(text: explanation)
+                                                .padding(.leading, timeColumnWidth + 10)
+                                        }
+                                        if digest.needsRetry(index) {
+                                            DigestExplainRetryBar {
+                                                digest.explainCue(index: index, title: itemTitle, cues: displayCues)
+                                            }
+                                            .padding(.leading, timeColumnWidth + 10)
+                                        }
                                     }
                                     if let message = digest.explainMessage(for: index) {
                                         Text(message)

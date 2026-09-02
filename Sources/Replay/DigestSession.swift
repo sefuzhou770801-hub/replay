@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class DigestSession: ObservableObject {
     @Published var notes: [DigestNote] = []
+    @Published var annotations: [DigestAnnotation] = []
+    @Published var collapsedAnnotationIDs: Set<UUID> = []
     @Published var overview: DigestOverviewPayload?
     @Published var isGeneratingOverview = false
     @Published var overviewMessage: String?
@@ -40,6 +42,8 @@ final class DigestSession: ObservableObject {
         self.folder = folder
         notes = DigestNotesStore.load(itemID: itemID, folder: folder)
             .sorted { $0.createdAt > $1.createdAt }
+        annotations = DigestAnnotationsStore.load(itemID: itemID, folder: folder)
+        collapsedAnnotationIDs = []
         if let record = DigestOverviewStore.load(itemID: itemID, folder: folder) {
             overview = record.payload
             shouldAutoGenerateOverview = false
@@ -84,6 +88,46 @@ final class DigestSession: ObservableObject {
 
     func explanation(for index: Int) -> String? {
         explanationByCue[index]
+    }
+
+    func annotation(for cue: VideoSubtitleCue) -> DigestAnnotation? {
+        DigestAnnotationAnchor.matching(time: cue.startTime, text: cue.text, in: annotations)
+    }
+
+    func isAnnotationCollapsed(_ id: UUID) -> Bool {
+        DigestAnnotationCollapse.isCollapsed(id, in: collapsedAnnotationIDs)
+    }
+
+    func toggleAnnotationCollapsed(_ id: UUID) {
+        collapsedAnnotationIDs = DigestAnnotationCollapse.toggling(id, in: collapsedAnnotationIDs)
+    }
+
+    func deleteAnnotation(_ id: UUID) {
+        guard let removed = annotations.first(where: { $0.id == id }) else { return }
+        annotations.removeAll { $0.id == id }
+        collapsedAnnotationIDs.remove(id)
+        if explanation == removed.explanation {
+            explanation = nil
+        }
+        explanationByCue = explanationByCue.filter { $0.value != removed.explanation }
+        persistAnnotations()
+    }
+
+    func recordAnnotation(time: Double, text: String, explanation: String, model: String) {
+        let existing = DigestAnnotationAnchor.matching(time: time, text: text, in: annotations)
+        let annotation = DigestAnnotation(
+            id: existing?.id ?? UUID(),
+            time: time,
+            text: text,
+            explanation: explanation,
+            createdAt: Date(),
+            model: model
+        )
+        annotations = DigestAnnotationUpsert.applying(annotation, to: annotations)
+        if let existing {
+            collapsedAnnotationIDs.remove(existing.id)
+        }
+        persistAnnotations()
     }
 
     func isExplainingCue(_ index: Int) -> Bool {
@@ -175,6 +219,11 @@ final class DigestSession: ObservableObject {
     private func persistNotes() {
         guard let itemID, let folder else { return }
         try? DigestNotesStore.save(notes, itemID: itemID, folder: folder)
+    }
+
+    private func persistAnnotations() {
+        guard let itemID, let folder else { return }
+        try? DigestAnnotationsStore.save(annotations, itemID: itemID, folder: folder)
     }
 
     private func scheduleDeletionCommit() {
@@ -316,6 +365,8 @@ final class DigestSession: ObservableObject {
             return
         }
         let passage = DigestExplainPrompt.passage(selected: selected, around: cueIndex, in: cues)
+        let cueTime = cues.indices.contains(cueIndex) ? cues[cueIndex].startTime : selectedCueTime
+        let cueText = cues.indices.contains(cueIndex) ? cues[cueIndex].text : selected
         isExplaining = true
         explainingCueIndex = cueIndex
         explainMessage = nil
@@ -341,8 +392,14 @@ final class DigestSession: ObservableObject {
                 let trimmedAnswer = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 switch DigestExplainQuality.verdict(selected: selected, explanation: trimmedAnswer) {
                 case .ok:
-                    self?.explanation = trimmedAnswer
-                    self?.explanationByCue[cueIndex] = trimmedAnswer
+                    self?.explanation = nil
+                    self?.explanationByCue[cueIndex] = nil
+                    self?.recordAnnotation(
+                        time: cueTime,
+                        text: cueText,
+                        explanation: trimmedAnswer,
+                        model: provider.activeModel
+                    )
                     self?.explainNeedsRetry = false
                     self?.retryCueIndices.remove(cueIndex)
                     self?.explainMessage = nil
