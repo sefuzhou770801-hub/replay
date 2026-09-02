@@ -35,6 +35,9 @@ enum OpenMyChrome {
     static let nsHair = NSColor(srgbRed: 34 / 255, green: 34 / 255, blue: 34 / 255, alpha: 1)
     static let nsInk = NSColor(srgbRed: 236 / 255, green: 236 / 255, blue: 236 / 255, alpha: 1)
     static let nsMuted = NSColor(srgbRed: 155 / 255, green: 155 / 255, blue: 155 / 255, alpha: 1)
+    static let nsFaint = NSColor(srgbRed: 102 / 255, green: 102 / 255, blue: 102 / 255, alpha: 1)
+    static let nsFieldBorder = NSColor(srgbRed: 42 / 255, green: 42 / 255, blue: 42 / 255, alpha: 1)
+    static let nsRowSelectedStroke = NSColor(srgbRed: 58 / 255, green: 58 / 255, blue: 58 / 255, alpha: 1)
     static let nsRowHover = NSColor(srgbRed: 24 / 255, green: 24 / 255, blue: 24 / 255, alpha: 1)
 
     static let radiusSm: CGFloat = 8

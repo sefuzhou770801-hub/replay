@@ -2114,6 +2114,7 @@ private struct ChapterSidebar: View {
     @State private var highlightFilterScrollToken = 0
     @State private var tocExpanded = false
     @State private var bookWidth: CGFloat = 300
+    @StateObject private var highlightScrollLock = DigestScrollLock()
 
     private let autoFollowResumeDelay: TimeInterval = 4
     /// 超过该间隔的时间跳变视为 seek，立刻恢复高亮跟随。
@@ -2314,8 +2315,11 @@ private struct ChapterSidebar: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 8)
                             .background {
-                                SidePaneScrollActivityMonitor {
-                                    noteUserScroll()
+                                ZStack {
+                                    SidePaneScrollActivityMonitor {
+                                        noteUserScroll()
+                                    }
+                                    DigestScrollLockMonitor(lock: highlightScrollLock)
                                 }
                                 .frame(width: 0, height: 0)
                             }
@@ -2434,7 +2438,7 @@ private struct ChapterSidebar: View {
             digest.explainCue(index: index, title: itemTitle, cues: displayCues)
         case .highlight:
             guard let index = resolvedKeyboardCueIndex() else { return }
-            digest.toggleHighlight(cue: displayCues[index])
+            toggleHighlight(for: displayCues[index])
         case .toggleHighlightsOnly:
             toggleHighlightFilter()
         }
@@ -2571,7 +2575,7 @@ private struct ChapterSidebar: View {
                 onExplain: {
                     digest.explainCue(index: index, title: itemTitle, cues: displayCues)
                 },
-                onHighlight: { digest.toggleHighlight(cue: cue) },
+                onHighlight: { toggleHighlight(for: cue) },
                 stacksActions: bookWidth <= DigestBookChrome.minColumnWidth + 0.5
             )
             .help("跳到这句")
@@ -2666,6 +2670,17 @@ private struct ChapterSidebar: View {
                     .foregroundStyle(OpenMyChrome.muted)
                     .padding(.leading, timeColumnWidth + 10)
             }
+        }
+    }
+
+    /// 点划线：批语行向下展开，锁住列表滚动，不触发滚到当前句。
+    private func toggleHighlight(for cue: VideoSubtitleCue) {
+        highlightScrollLock.freeze()
+        withAnimation(DigestHighlightExpand.animation) {
+            digest.toggleHighlight(cue: cue)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + DigestHighlightExpand.duration + 0.05) {
+            highlightScrollLock.unfreeze()
         }
     }
 
