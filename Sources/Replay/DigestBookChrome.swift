@@ -19,12 +19,28 @@ enum DigestBookChrome {
     static let commentFieldSpacing: CGFloat = 6
     static let commentSavedSize: CGFloat = 11
     static let commentHintSize: CGFloat = 10
+    static let commentHintSpacing: CGFloat = 10
     static let toolbarSpacing: CGFloat = 8
     static let headerHorizontalPadding: CGFloat = 12
     static let actionReserveWidth: CGFloat = 112
 
     static func entryTitle(_ count: Int) -> String {
         "划线 \(count)"
+    }
+}
+
+enum DigestCommentHintLayout {
+    static func width(of text: String) -> CGFloat {
+        ceil(
+            (text as NSString).size(
+                withAttributes: [.font: NSFont.systemFont(ofSize: DigestBookChrome.commentHintSize)]
+            ).width
+        )
+    }
+
+    static func shouldShow(columnWidth: CGFloat, hint: String) -> Bool {
+        let inner = columnWidth - DigestBookChrome.commentFieldPadding * 2
+        return width(of: hint) + DigestBookChrome.commentHintSpacing <= inner + 0.5
     }
 }
 

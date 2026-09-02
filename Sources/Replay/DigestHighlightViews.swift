@@ -99,7 +99,7 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
         hintLabel.font = NSFont.systemFont(ofSize: DigestBookChrome.commentHintSize)
         hintLabel.textColor = OpenMyChrome.nsFaint
         hintLabel.alignment = .right
-        hintLabel.lineBreakMode = .byTruncatingTail
+        hintLabel.lineBreakMode = .byClipping
 
         addSubview(field)
         addSubview(hintLabel)
@@ -114,21 +114,32 @@ final class DigestCommentFieldView: NSView, NSTextFieldDelegate {
     override func layout() {
         super.layout()
         let pad = DigestBookChrome.commentFieldPadding
-        let gap: CGFloat = 8
-        let hintSize = hintLabel.intrinsicContentSize
-        let hintWidth = min(max(hintSize.width, 1), max(0, bounds.width - pad * 2 - 40))
-        hintLabel.frame = NSRect(
-            x: bounds.width - pad - hintWidth,
-            y: 0,
-            width: hintWidth,
-            height: bounds.height
-        )
-        field.frame = NSRect(
-            x: pad,
-            y: 0,
-            width: max(0, hintLabel.frame.minX - gap - pad),
-            height: bounds.height
-        )
+        let hint = hintLabel.stringValue
+        let show = DigestCommentHintLayout.shouldShow(columnWidth: bounds.width, hint: hint)
+        hintLabel.isHidden = !show
+        if show {
+            let hintWidth = DigestCommentHintLayout.width(of: hint)
+            hintLabel.frame = NSRect(
+                x: bounds.width - pad - hintWidth,
+                y: 0,
+                width: hintWidth,
+                height: bounds.height
+            )
+            field.frame = NSRect(
+                x: pad,
+                y: 0,
+                width: max(0, hintLabel.frame.minX - DigestBookChrome.commentHintSpacing - pad),
+                height: bounds.height
+            )
+        } else {
+            hintLabel.frame = .zero
+            field.frame = NSRect(
+                x: pad,
+                y: 0,
+                width: max(0, bounds.width - pad * 2),
+                height: bounds.height
+            )
+        }
     }
 
     func applyChrome(focused: Bool) {

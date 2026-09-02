@@ -22,6 +22,40 @@ struct DigestHighlightCommentProof {
         precondition(DigestBookChrome.commentHintIdle == "回车保存 · Esc 取消")
         precondition(DigestBookChrome.commentHintTyping == "回车保存")
         precondition(DigestBookChrome.commentSavedSize == 11)
+        precondition(DigestBookChrome.commentHintSpacing == 10)
+
+        let idleHint = DigestBookChrome.commentHintIdle
+        let typingHint = DigestBookChrome.commentHintTyping
+        let idleWidth = DigestCommentHintLayout.width(of: idleHint)
+        let typingWidth = DigestCommentHintLayout.width(of: typingHint)
+        let pads = DigestBookChrome.commentFieldPadding * 2
+        let hideIdleWidth = pads + idleWidth + DigestBookChrome.commentHintSpacing - 1
+        let showIdleWidth = pads + idleWidth + DigestBookChrome.commentHintSpacing + 1
+        precondition(
+            !DigestCommentHintLayout.shouldShow(columnWidth: hideIdleWidth, hint: idleHint),
+            "窄于提示全宽加 10 点间距须隐藏"
+        )
+        precondition(
+            DigestCommentHintLayout.shouldShow(columnWidth: showIdleWidth, hint: idleHint),
+            "够放下提示全宽加 10 点间距须显示"
+        )
+        precondition(
+            !DigestCommentHintLayout.shouldShow(
+                columnWidth: pads + typingWidth + DigestBookChrome.commentHintSpacing - 1,
+                hint: typingHint
+            ),
+            "输入中窄列须隐藏提示"
+        )
+
+        let hiddenView = DigestCommentFieldView(
+            frame: NSRect(x: 0, y: 0, width: hideIdleWidth, height: DigestBookChrome.commentFieldHeight)
+        )
+        hiddenView.layout()
+        precondition(hiddenView.hintLabel.isHidden, "窄列布局须隐藏提示，不得截断")
+        precondition(
+            abs(hiddenView.field.frame.width - (hideIdleWidth - pads)) < 1,
+            "隐藏提示后输入区须占满内宽"
+        )
 
         let empty = render(editing: true, comment: "", path: fieldPath)
         printMetrics(name: "输入态", result: empty)
@@ -101,6 +135,20 @@ struct DigestHighlightCommentProof {
             fieldView.hintLabel.stringValue == expectedHint,
             "提示须为「\(expectedHint)」，实际「\(fieldView.hintLabel.stringValue)」"
         )
+        let needed = DigestCommentHintLayout.width(of: expectedHint)
+        if DigestCommentHintLayout.shouldShow(columnWidth: chrome.width, hint: expectedHint) {
+            precondition(!fieldView.hintLabel.isHidden, "列宽足够时提示须完整显示")
+            precondition(
+                fieldView.hintLabel.frame.width + 0.5 >= needed,
+                "提示不得截断：frame=\(fieldView.hintLabel.frame.width) 文本=\(needed)"
+            )
+            precondition(
+                fieldView.hintLabel.lineBreakMode == .byClipping,
+                "提示不得用截断换行"
+            )
+        } else {
+            precondition(fieldView.hintLabel.isHidden, "列宽不足时提示须整体隐藏")
+        }
         precondition(result.hits["explain"] == nil, "编辑期间不得显示解释")
         precondition(result.hits["highlight-action"] == nil, "编辑期间不得显示划线按钮")
 
