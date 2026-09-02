@@ -164,6 +164,73 @@ struct WatchGlassContainer<Content: View>: View {
     }
 }
 
+enum WindowChromeMetrics {
+    static let minimumSize = NSSize(width: 980, height: 640)
+
+    static func clamp(_ size: NSSize) -> NSSize {
+        NSSize(
+            width: max(size.width, minimumSize.width),
+            height: max(size.height, minimumSize.height)
+        )
+    }
+
+    /// 最小尺寸必须写在窗口上。SwiftUI 布局之后会用自己的 contentMinSize 覆盖
+    /// NSWindow.minSize，所以每次配置和尺寸变化都要重新断言。
+    static func applyMinimumSize(to window: NSWindow) {
+        window.minSize = minimumSize
+        window.contentMinSize = minimumSize
+        guard window.frame.width + 0.5 < minimumSize.width
+            || window.frame.height + 0.5 < minimumSize.height else { return }
+        var frame = window.frame
+        let repairedHeight = max(frame.height, minimumSize.height)
+        frame.origin.y -= repairedHeight - frame.height
+        frame.size.width = max(frame.width, minimumSize.width)
+        frame.size.height = repairedHeight
+        window.setFrame(frame, display: true, animate: false)
+    }
+}
+
+/// 转发原窗口代理，并在用户拖拽时钳制最小尺寸。
+final class WindowMinSizeGuard: NSObject, NSWindowDelegate {
+    private weak var original: NSWindowDelegate?
+    private weak var observedWindow: NSWindow?
+
+    func install(on window: NSWindow) {
+        if observedWindow === window, window.delegate === self { return }
+        if window.delegate !== self {
+            original = window.delegate
+        }
+        observedWindow = window
+        window.delegate = self
+    }
+
+    func detach() {
+        if let window = observedWindow, window.delegate === self {
+            window.delegate = original
+        }
+        observedWindow = nil
+        original = nil
+    }
+
+    override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || (original?.responds(to: aSelector) ?? false)
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        original
+    }
+
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        sender.minSize = WindowChromeMetrics.minimumSize
+        sender.contentMinSize = WindowChromeMetrics.minimumSize
+        var size = WindowChromeMetrics.clamp(frameSize)
+        if let original, original.responds(to: #selector(NSWindowDelegate.windowWillResize(_:to:))) {
+            size = WindowChromeMetrics.clamp(original.windowWillResize?(sender, to: size) ?? size)
+        }
+        return size
+    }
+}
+
 struct WindowStyleConfigurator: NSViewRepresentable {
     let title: String
 
@@ -173,6 +240,8 @@ struct WindowStyleConfigurator: NSViewRepresentable {
         weak var alignedWindow: NSWindow?
         let activationClickShield = ForegroundActivationClickShield()
         let windowFocusController = PlaybackWindowFocusController()
+        let minSizeGuard = WindowMinSizeGuard()
+        private var resizeObserver: NSObjectProtocol?
 
         func centerTrafficLights(in window: NSWindow) {
             guard alignedWindow !== window else { return }
@@ -236,6 +305,30 @@ struct WindowStyleConfigurator: NSViewRepresentable {
                 }
             }
         }
+
+        func attachMinimumSize(to window: NSWindow) {
+            minSizeGuard.install(on: window)
+            WindowChromeMetrics.applyMinimumSize(to: window)
+            guard resizeObserver == nil else { return }
+            resizeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak window] _ in
+                guard let window else { return }
+                WindowChromeMetrics.applyMinimumSize(to: window)
+            }
+        }
+
+        func detach() {
+            if let resizeObserver {
+                NotificationCenter.default.removeObserver(resizeObserver)
+            }
+            resizeObserver = nil
+            minSizeGuard.detach()
+            activationClickShield.detach()
+            windowFocusController.detach()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -253,8 +346,7 @@ struct WindowStyleConfigurator: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
-        coordinator.activationClickShield.detach()
-        coordinator.windowFocusController.detach()
+        coordinator.detach()
     }
 
     private func configure(_ window: NSWindow?, coordinator: Coordinator) {
@@ -279,24 +371,7 @@ struct WindowStyleConfigurator: NSViewRepresentable {
         coordinator.scheduleSidebarToggleAlignment(in: window)
         coordinator.activationClickShield.attach(to: window)
         coordinator.windowFocusController.attach(to: window)
-        // 最小尺寸必须落在窗口上，不能写进 ContentView 的 frame。后者会在
-        // NavigationSplitView 展开左栏时把栏宽叠进 fittingSize，把内容撑出窗口。
-        let minimumSize = NSSize(width: 980, height: 640)
-        window.minSize = minimumSize
-
-        // AppKit does not automatically enlarge a restored window that was
-        // saved before a newer minimum size was introduced. Such a window can
-        // squeeze NavigationSplitView below its column minimum and center its
-        // overflowing content underneath the traffic lights. Repair that
-        // legacy frame once it is attached, preserving the window's top edge.
-        if window.frame.width < minimumSize.width || window.frame.height < minimumSize.height {
-            var frame = window.frame
-            let repairedHeight = max(frame.height, minimumSize.height)
-            frame.origin.y -= repairedHeight - frame.height
-            frame.size.width = max(frame.width, minimumSize.width)
-            frame.size.height = repairedHeight
-            window.setFrame(frame, display: true, animate: false)
-        }
+        coordinator.attachMinimumSize(to: window)
     }
 }
 

@@ -147,6 +147,21 @@ struct SidebarSlideoutCheck {
 
         writeContactSheet(images)
         writeLog(samples)
+
+        let undersized = NSRect(x: window.frame.origin.x, y: window.frame.origin.y, width: 600, height: 400)
+        print(
+            "min_size_before setFrame=600x400 minSize=\(fmt(window.minSize)) contentMinSize=\(fmt(window.contentMinSize)) frame=\(fmt(window.frame))"
+        )
+        window.setFrame(undersized, display: true, animate: false)
+        pump(window, host, times: 8)
+        print(
+            "min_size_after setFrame=600x400 minSize=\(fmt(window.minSize)) contentMinSize=\(fmt(window.contentMinSize)) frame=\(fmt(window.frame))"
+        )
+        precondition(
+            window.frame.width + 0.5 >= 980 && window.frame.height + 0.5 >= 640,
+            "窗口 setFrame 到 600×400 后宽高不得小于 980×640，实际 \(fmt(window.frame))"
+        )
+
         window.close()
 
         let final = samples[samples.count - 1]
