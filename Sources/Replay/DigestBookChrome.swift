@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 enum DigestBookChrome {
+    static let minColumnWidth: CGFloat = 232
     static let minActionHit: CGFloat = 22
     static let highlightMarkWidth: CGFloat = 2
     static let annotationRadius: CGFloat = 8
@@ -12,6 +13,7 @@ enum DigestBookChrome {
     static let commentPlaceholder = "写一句批语"
     static let toolbarSpacing: CGFloat = 8
     static let headerHorizontalPadding: CGFloat = 12
+    static let actionReserveWidth: CGFloat = 112
 
     static func entryTitle(_ count: Int) -> String {
         "划线 \(count)"
@@ -86,5 +88,13 @@ enum DigestBookHitKey: PreferenceKey {
 
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
+enum DigestBookWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

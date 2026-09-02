@@ -96,6 +96,12 @@ enum DigestAnnotationChrome {
 enum DigestAnnotationsStore {
     static let sidecarSuffix = "annotations.json"
 
+    enum Read: Equatable {
+        case missing
+        case ready([DigestAnnotation])
+        case corrupt
+    }
+
     static func fileURL(itemID: UUID, in folder: URL) -> URL {
         folder.appendingPathComponent("\(itemID.uuidString).\(sidecarSuffix)")
     }
@@ -105,10 +111,34 @@ enum DigestAnnotationsStore {
     }
 
     static func load(from url: URL) -> [DigestAnnotation] {
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return [] }
+        switch read(from: url) {
+        case .ready(let annotations):
+            return annotations
+        case .missing, .corrupt:
+            return []
+        }
+    }
+
+    static func read(itemID: UUID, folder: URL) -> Read {
+        read(from: fileURL(itemID: itemID, in: folder))
+    }
+
+    static func read(from url: URL) -> Read {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            return .corrupt
+        }
+        if data.isEmpty { return .missing }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([DigestAnnotation].self, from: data)) ?? []
+        do {
+            return .ready(try decoder.decode([DigestAnnotation].self, from: data))
+        } catch {
+            return .corrupt
+        }
     }
 
     static func save(_ annotations: [DigestAnnotation], itemID: UUID, folder: URL) throws {

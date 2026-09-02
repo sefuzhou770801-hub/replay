@@ -1748,7 +1748,7 @@ struct LocalVideoPlayer: NSViewRepresentable {
 
             // Move the existing player output only after the panel is fully
             // configured. The panel is shown at its final location, so the sole
-            // transition is opacity—there is never a position animation.
+            // transition is opacity; there is never a position animation.
             playerView?.playerLayer.player = nil
             fullscreenPlayerView?.playerLayer.player = nil
             floatingView.player = player

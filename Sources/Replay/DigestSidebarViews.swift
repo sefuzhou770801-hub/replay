@@ -86,6 +86,7 @@ struct DigestBookToolbar: View {
                 activeIndex: activeIndex,
                 step: step
             )
+            .frame(minWidth: 0)
             Button(action: onHighlightFilter) {
                 Text(DigestBookChrome.entryTitle(highlightCount))
                     .font(.system(size: 12, weight: .medium))
@@ -229,6 +230,78 @@ struct DigestExplainProgress: View {
                 RoundedRectangle(cornerRadius: DigestBookChrome.annotationRadius, style: .continuous)
                     .strokeBorder(OpenMyChrome.hair)
             }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DigestBookHitKey.self,
+                        value: ["explain-progress": proxy.frame(in: .named("digest-book-page"))]
+                    )
+                }
+            )
+            .accessibilityLabel(DigestBookChrome.explainingLabel)
+    }
+}
+
+struct DigestMissingKeyHint: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(DigestCopy.missingKeyHint)
+                .font(.system(size: 12))
+                .foregroundStyle(OpenMyChrome.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: openSetup) {
+                Text(DigestCopy.viewConfigTitle)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(OpenMyChrome.ink)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: DigestBookChrome.minActionHit)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(
+                OpenMyChrome.canvas,
+                in: RoundedRectangle(cornerRadius: OpenMyChrome.radiusSm, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: OpenMyChrome.radiusSm, style: .continuous)
+                    .strokeBorder(OpenMyChrome.hair)
+            }
+            .help(DigestCopy.viewConfigTitle)
+            .accessibilityLabel(DigestCopy.viewConfigTitle)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: DigestBookHitKey.self,
+                        value: ["view-config": proxy.frame(in: .named("digest-book-page"))]
+                    )
+                }
+            )
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            OpenMyChrome.raise,
+            in: RoundedRectangle(cornerRadius: DigestBookChrome.annotationRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DigestBookChrome.annotationRadius, style: .continuous)
+                .strokeBorder(OpenMyChrome.hair)
+        }
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: DigestBookHitKey.self,
+                    value: ["missing-key": proxy.frame(in: .named("digest-book-page"))]
+                )
+            }
+        )
+        .accessibilityLabel(DigestCopy.missingKeyHint)
+    }
+
+    private func openSetup() {
+        guard let url = DigestCopy.keySetupURL else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 
@@ -251,7 +324,16 @@ struct DigestNoteUndoBar: View {
                     Capsule().strokeBorder(OpenMyChrome.hair)
                 }
                 .contentShape(Capsule())
+                .accessibilityLabel("撤回")
         }
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: DigestBookHitKey.self,
+                    value: ["undo": proxy.frame(in: .named("digest-book-page"))]
+                )
+            }
+        )
         .padding(.leading, 10)
         .padding(.trailing, 8)
         .padding(.vertical, DigestCueDisplay.rowVerticalPadding)

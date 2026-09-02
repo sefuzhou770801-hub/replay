@@ -4,7 +4,7 @@ enum DigestTOCCopy {
     static let generateTitle = "生成目录"
     static let generatingLabel = "正在生成目录…"
     static let retryButtonTitle = "再试一次"
-    static let missingKeyHint = "还没填密钥。终端执行 defaults write com.mg.replay AnthropicAPIKey -string sk-…，或写入 GeminiAPIKey。"
+    static let missingKeyHint = DigestCopy.missingKeyHint
 
     static func collapsedTitle(chapterCount: Int, duration: Double) -> String {
         "目录 · \(chapterCount) 章 · \(DigestTimecode.format(duration))"
@@ -21,6 +21,69 @@ enum DigestTOCCopy {
         case .generated:
             return "章节与概括由 AI 生成"
         }
+    }
+}
+
+enum DigestQuoteNormalize {
+    static func apply(_ text: String) -> String {
+        var mapped = ""
+        mapped.reserveCapacity(text.count)
+        for character in text {
+            for scalar in character.unicodeScalars {
+                if let half = halfwidth(scalar) {
+                    mapped.append(Character(half))
+                } else if scalar.value == 0x3000 {
+                    continue
+                } else {
+                    mapped.append(Character(scalar))
+                }
+            }
+        }
+        let folded = mapped.lowercased()
+        return folded.unicodeScalars
+            .filter { !CharacterSet.whitespacesAndNewlines.contains($0) }
+            .filter { !CharacterSet.punctuationCharacters.contains($0) }
+            .filter { !CharacterSet.symbols.contains($0) }
+            .map(String.init)
+            .joined()
+    }
+
+    static func looselyMatches(quote: String, translation: String, cueText: String) -> Bool {
+        let haystack = apply(cueText)
+        guard !haystack.isEmpty else { return false }
+        let original = apply(quote)
+        if !original.isEmpty, haystack.contains(original) { return true }
+        let translated = apply(translation)
+        if !translated.isEmpty, haystack.contains(translated) { return true }
+        return false
+    }
+
+    private static func halfwidth(_ scalar: Unicode.Scalar) -> Unicode.Scalar? {
+        let value = scalar.value
+        guard (0xFF01...0xFF5E).contains(value) else { return nil }
+        return Unicode.Scalar(value - 0xFEE0)
+    }
+}
+
+enum DigestTOCCompleteness {
+    /// 结构完整：有章节且每章概括非空。金句缺省不算失败。
+    static func hasAllSummaries(_ payload: DigestOverviewPayload) -> Bool {
+        guard !payload.chapters.isEmpty else { return false }
+        return payload.chapters.allSatisfy {
+            !$0.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    static func fillingMissingSummaries(_ payload: DigestOverviewPayload) -> DigestOverviewPayload {
+        var next = payload
+        next.chapters = payload.chapters.map { chapter in
+            var copy = chapter
+            if copy.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                copy.summary = DigestCopy.missingSummaryPlaceholder
+            }
+            return copy
+        }
+        return next
     }
 }
 
@@ -199,6 +262,14 @@ enum DigestTOCComposer {
         return nil
     }
 
+    static func quoteMatchesChapter(
+        _ quote: DigestKeyQuote,
+        range: Range<Double>,
+        cues: [VideoSubtitleCue]
+    ) -> Bool {
+        snapQuoteToCue(quote, range: range, cues: cues) != nil
+    }
+
     private static func snapQuoteToCue(
         _ quote: DigestKeyQuote,
         range: Range<Double>,
@@ -206,19 +277,18 @@ enum DigestTOCComposer {
     ) -> DigestKeyQuote? {
         let inRange = cues.filter { range.contains($0.startTime) }
         guard !inRange.isEmpty else { return nil }
-        let needle = normalize(quote.quote)
-        guard !needle.isEmpty else { return nil }
-        guard let cue = inRange.first(where: { cueMatches($0, needle: needle) }) else {
+        guard let cue = inRange.first(where: { cueMatches($0, quote: quote) }) else {
             return nil
         }
         return quoteFromCue(cue, fallbackTranslation: quote.translation)
     }
 
-    private static func cueMatches(_ cue: VideoSubtitleCue, needle: String) -> Bool {
-        let haystack = normalize(cue.text)
-        if haystack.contains(needle) { return true }
-        let original = normalize(firstLine(cue.text))
-        return !original.isEmpty && (original.contains(needle) || needle.contains(original))
+    private static func cueMatches(_ cue: VideoSubtitleCue, quote: DigestKeyQuote) -> Bool {
+        DigestQuoteNormalize.looselyMatches(
+            quote: quote.quote,
+            translation: quote.translation,
+            cueText: cue.text
+        )
     }
 
     private static func quoteFromCue(
@@ -250,10 +320,4 @@ enum DigestTOCComposer {
             .first { !$0.isEmpty } ?? text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func normalize(_ text: String) -> String {
-        text.lowercased()
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-    }
 }

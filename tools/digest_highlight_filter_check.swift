@@ -8,6 +8,7 @@ struct DigestHighlightFilterCheck {
         checkCollapsedHint()
         checkToggleActions()
         checkScrollRestoreAnchor()
+        checkEnterExitAnchorIgnoresFilterScroll()
         print("digest_highlight_filter_check=passed")
     }
 
@@ -170,5 +171,21 @@ struct DigestHighlightFilterCheck {
         precondition(
             DigestHighlightFilter.scrollTarget(visibleIndices: [], anchor: 2) == nil
         )
+    }
+
+    private static func checkEnterExitAnchorIgnoresFilterScroll() {
+        let stored = DigestHighlightFilter.enterAnchor(reading: 2, visible: [0, 1, 2, 3])
+        precondition(stored == 2, "进入只看划线须记下当时阅读句")
+        let scrolledDuringFilter = 0
+        precondition(
+            DigestHighlightFilter.exitTarget(stored: stored, visible: [0, 1, 2, 3]) == 2,
+            "退出时用进入时的锚点，过滤中滚动不得覆盖。误用 \(scrolledDuringFilter) 会滚走"
+        )
+        precondition(
+            DigestHighlightFilter.exitTarget(stored: stored, visible: [0, 3]) == 3
+                || DigestHighlightFilter.exitTarget(stored: stored, visible: [0, 3]) == 0,
+            "锚点句未划线时回落到可见列表"
+        )
+        precondition(DigestHighlightFilter.exitTarget(stored: 2, visible: [0, 3]) == 0)
     }
 }

@@ -142,11 +142,10 @@ enum DigestGeminiRequestBuilder {
     static let model = "gemini-3.7-flash"
     static let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent")!
 
-    static func requestURL(apiKey: String) -> URL {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "&=?")
-        let encoded = apiKey.addingPercentEncoding(withAllowedCharacters: allowed) ?? apiKey
-        return URL(string: "\(endpoint.absoluteString)?key=\(encoded)")!
+    static let apiKeyHeader = "x-goog-api-key"
+
+    static func requestURL() -> URL {
+        endpoint
     }
 
     static func jsonObject(system: String, user: String, maxTokens: Int, temperature: Double? = nil) -> [String: Any] {
@@ -193,7 +192,7 @@ enum DigestGeminiRequestBuilder {
 }
 
 enum DigestRequestBuilder {
-    static let missingKeyHint = "还没填密钥"
+    static let missingKeyHint = DigestCopy.missingKeyHint
     static var model: String { WatchQARequestBuilder.model }
     static var endpoint: URL { WatchQARequestBuilder.endpoint }
     static var anthropicVersion: String { WatchQARequestBuilder.anthropicVersion }
@@ -238,19 +237,20 @@ enum DigestRequestBuilder {
     }
 
     static func errorMessage(status: Int, data: Data) -> String {
-        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let error = object["error"] as? [String: Any],
-               let message = error["message"] as? String,
-               !message.isEmpty {
-                return message
-            }
-            if let message = object["message"] as? String, !message.isEmpty {
-                return message
-            }
-        }
-        return "请求失败（\(status)）"
+        _ = status
+        _ = data
+        return DigestCopy.requestFailed
     }
 }
+
+typealias DigestCompleteFn = (
+    _ system: String,
+    _ user: String,
+    _ apiKey: String,
+    _ maxTokens: Int,
+    _ provider: DigestProviderKind,
+    _ temperature: Double?
+) async throws -> String
 
 enum DigestAPIClient {
     static func complete(
@@ -303,7 +303,7 @@ enum DigestAPIClient {
             maxTokens: maxTokens,
             temperature: temperature
         ) else {
-            throw DigestClientError(message: "这次没写成")
+            throw DigestClientError(message: DigestCopy.writeFailed)
         }
         request.httpBody = httpBody
         return try await send(request, session: session, extract: DigestRequestBuilder.text(fromResponse:))
@@ -317,8 +317,9 @@ enum DigestAPIClient {
         temperature: Double?,
         session: URLSession
     ) async throws -> String {
-        var request = URLRequest(url: DigestGeminiRequestBuilder.requestURL(apiKey: apiKey))
+        var request = URLRequest(url: DigestGeminiRequestBuilder.requestURL())
         request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: DigestGeminiRequestBuilder.apiKeyHeader)
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         guard let httpBody = DigestGeminiRequestBuilder.jsonData(
             system: system,
@@ -326,7 +327,7 @@ enum DigestAPIClient {
             maxTokens: maxTokens,
             temperature: temperature
         ) else {
-            throw DigestClientError(message: "这次没写成")
+            throw DigestClientError(message: DigestCopy.writeFailed)
         }
         request.httpBody = httpBody
         return try await send(request, session: session, extract: DigestGeminiRequestBuilder.text(fromResponse:))
@@ -344,7 +345,7 @@ enum DigestAPIClient {
         guard let text = extract(data),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
-            throw DigestClientError(message: "这次没写成")
+            throw DigestClientError(message: DigestCopy.writeFailed)
         }
         return text
     }

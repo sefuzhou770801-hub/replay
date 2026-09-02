@@ -31,6 +31,8 @@ enum OpenMyChrome {
     static let rec = Color(hex: recHex)
 
     static let nsCanvas = NSColor(srgbRed: 13 / 255, green: 13 / 255, blue: 13 / 255, alpha: 1)
+    static let nsRaise = NSColor(srgbRed: 30 / 255, green: 30 / 255, blue: 30 / 255, alpha: 1)
+    static let nsHair = NSColor(srgbRed: 34 / 255, green: 34 / 255, blue: 34 / 255, alpha: 1)
     static let nsInk = NSColor(srgbRed: 236 / 255, green: 236 / 255, blue: 236 / 255, alpha: 1)
     static let nsMuted = NSColor(srgbRed: 155 / 255, green: 155 / 255, blue: 155 / 255, alpha: 1)
     static let nsRowHover = NSColor(srgbRed: 24 / 255, green: 24 / 255, blue: 24 / 255, alpha: 1)

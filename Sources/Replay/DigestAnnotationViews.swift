@@ -52,17 +52,25 @@ struct DigestAnnotationCard: View {
                 )
             }
             Spacer(minLength: 0)
-            headerButton(
-                title: isCollapsed ? DigestAnnotationChrome.expandTitle : DigestAnnotationChrome.collapseTitle,
-                action: onToggle,
-                hitKey: "annotation-toggle"
-            )
-            headerButton(
-                title: DigestAnnotationChrome.deleteTitle,
-                action: onDelete,
-                hitKey: "annotation-delete"
-            )
+            toggleButton
+            deleteButton
         }
+    }
+
+    private var toggleButton: some View {
+        headerButton(
+            title: isCollapsed ? DigestAnnotationChrome.expandTitle : DigestAnnotationChrome.collapseTitle,
+            action: onToggle,
+            hitKey: "annotation-toggle"
+        )
+    }
+
+    private var deleteButton: some View {
+        headerButton(
+            title: DigestAnnotationChrome.deleteTitle,
+            action: onDelete,
+            hitKey: "annotation-delete"
+        )
     }
 
     private func headerButton(

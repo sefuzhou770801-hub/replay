@@ -68,6 +68,27 @@ seesee 不止想做一个更干净的播放器。我们相信下一代播放器�
 | `F` | 全屏 |
 | 视频上垂直滚动 | 调节音量 |
 
+## 配置 AI 密钥
+
+解释与目录需要 API 密钥。任选一路即可。
+
+Anthropic（默认）：
+
+```sh
+defaults write com.mg.replay AnthropicAPIKey -string sk-你的密钥
+```
+
+或设置环境变量 `ANTHROPIC_API_KEY`。
+
+Gemini：
+
+```sh
+defaults write com.mg.replay GeminiAPIKey -string 你的密钥
+defaults write com.mg.replay DigestProvider -string gemini
+```
+
+或设置环境变量 `GEMINI_API_KEY`。
+
 ## 数据与隐私
 
 - 下载的媒体：`~/Movies/Replay`

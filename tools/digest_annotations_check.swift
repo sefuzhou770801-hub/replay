@@ -247,13 +247,18 @@ struct DigestAnnotationsCheck {
 
     private static func checkCorruptAndMissing() {
         let missing = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID().uuidString).annotations.json")
+        precondition(DigestAnnotationsStore.read(from: missing) == .missing)
         precondition(DigestAnnotationsStore.load(from: missing).isEmpty, "文件不存在视为空")
 
         let folder = FileManager.default.temporaryDirectory
         let corrupt = folder.appendingPathComponent("digest-annotations-corrupt-\(UUID().uuidString).json")
         try? "not-json".write(to: corrupt, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: corrupt) }
-        precondition(DigestAnnotationsStore.load(from: corrupt).isEmpty, "坏 JSON 按空列表")
+        precondition(DigestAnnotationsStore.read(from: corrupt) == .corrupt, "损坏文件必须标为 corrupt")
+        let before = try? String(contentsOf: corrupt, encoding: .utf8)
+        _ = DigestAnnotationsStore.load(from: corrupt)
+        let after = try? String(contentsOf: corrupt, encoding: .utf8)
+        precondition(before == after, "读取损坏文件不得覆盖原件")
 
         let empty = folder.appendingPathComponent("digest-annotations-empty-\(UUID().uuidString).json")
         FileManager.default.createFile(atPath: empty.path, contents: Data(), attributes: nil)
